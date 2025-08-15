@@ -23,9 +23,8 @@ class ReadStatsDataManager(DataManager):
 
     def __init__(self, data_path: Path):
         super().__init__(data_path)
-        self.stats_dir = self.data_path / "read_stats"
+        self.stats_dir = self.data_path / "reads"
         self.mapping_dir = self.data_path / "mapping"
-        self.contamination_dir = self.data_path / "contamination"
 
     def load_data(self) -> Dict[str, pd.DataFrame]:
         """
@@ -37,28 +36,14 @@ class ReadStatsDataManager(DataManager):
         data = {}
 
         # Load mapping statistics
-        mapping_stats = self.mapping_dir / "mapping_stats.tsv"
+        mapping_stats = self.mapping_dir / "mapping.tsv"
         if mapping_stats.exists():
-            data['mapping_stats'] = pd.read_csv(mapping_stats, sep='\t')
-
-        # Load UMI statistics
-        umi_stats = self.stats_dir / "umi_stats.tsv"
-        if umi_stats.exists():
-            data['umi_stats'] = pd.read_csv(umi_stats, sep='\t')
-
-        # Load contamination check results
-        contamination_lasv = self.contamination_dir / "lasv_contamination.tsv"
-        if contamination_lasv.exists():
-            data['contamination_lasv'] = pd.read_csv(contamination_lasv, sep='\t')
-
-        contamination_hazv = self.contamination_dir / "hazv_contamination.tsv"
-        if contamination_hazv.exists():
-            data['contamination_hazv'] = pd.read_csv(contamination_hazv, sep='\t')
+            data['mapping'] = pd.read_csv(mapping_stats, sep='\t')
 
         # Load read count summaries
-        read_counts = self.stats_dir / "read_counts.tsv"
+        read_counts = self.stats_dir / "reads.tsv"
         if read_counts.exists():
-            data['read_counts'] = pd.read_csv(read_counts, sep='\t')
+            data['reads'] = pd.read_csv(read_counts, sep='\t')
 
         return data
 
@@ -94,124 +79,57 @@ class ReadStatsAnalyzer(BaseAnalyzer):
         data_manager = ReadStatsDataManager(data_path)
         super().__init__(data_manager)
 
-    def calculate_mapping_efficiency(self, sample_ids: Optional[List[str]] = None) -> pd.DataFrame:
+    def create_mapping_overview_per_segment_species(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Calculate mapping efficiency statistics for samples.
+        Create mapping statistics overview grouped by segment and species.
+        Filters out combinations where max reads mapped < 200.
 
         Args:
-            sample_ids: Optional list of specific samples to analyze
+            mapping_df: DataFrame with columns ['sample', 'cluster', 'species', 'segment',
+                    '(samtools Raw) reads mapped (R1+R2)', '(samtools Raw) reads mapped %',
+                    '(samtools Raw) reads unmapped (R1+R2)', '(samtools Raw) reads unmapped %']
 
         Returns:
-            DataFrame with mapping efficiency statistics
+            dict: Nested dictionary with statistics per species per segment
         """
-        if 'mapping_stats' not in self.data:
-            logger.warning("No mapping statistics data available")
-            return pd.DataFrame()
 
-        mapping_df = self.data['mapping_stats'].copy()
+        if df.empty:
+            return {}
 
-        if sample_ids:
-            mapping_df = mapping_df[mapping_df['sample_id'].isin(sample_ids)]
+        # Group by species and segment
+        grouped = df.groupby(['species', 'segment'])
 
-        # Calculate efficiency percentages
-        mapping_df['mapping_efficiency'] = (
-            mapping_df['mapped_reads'] / mapping_df['total_reads'] * 100
-        )
-        mapping_df['target_efficiency'] = (
-            mapping_df['target_mapped_reads'] / mapping_df['total_reads'] * 100
-        )
+        stats = {}
+        # Rename columns for easier handling
 
-        return mapping_df
+        for (species, segment), group in grouped:
+            # Calculate statistics for this species-segment combination
+            min_idx = group['reads_mapped'].idxmin()
+            max_idx = group['reads_mapped'].idxmax()
 
-    def calculate_umi_statistics(self, sample_ids: Optional[List[str]] = None) -> pd.DataFrame:
-        """
-        Calculate UMI-based statistics for samples.
+            reads_mapped_stats = {
+                'mean_mapping_reads': group['reads_mapped'].mean(),
+                'min_mapping_reads': group['reads_mapped'].min(),
+                'min_mapping_reads_sample': group.loc[min_idx, 'sample'],
+                'max_mapping_reads': group['reads_mapped'].max(),
+                'max_mapping_reads_sample': group.loc[max_idx, 'sample'],
+                'std_mapping_reads': group['reads_mapped'].std(),
+                'sample_count': len(group)
+            }
 
-        Args:
-            sample_ids: Optional list of specific samples to analyze
+            # Filter out combinations where max reads mapped < 200
+            if reads_mapped_stats['max_mapping_reads'] >= 200:
+                # Initialize species in stats if not exists
+                if species not in stats:
+                    stats[species] = {}
 
-        Returns:
-            DataFrame with UMI statistics
-        """
-        if 'umi_stats' not in self.data:
-            logger.warning("No UMI statistics data available")
-            return pd.DataFrame()
+                # Add segment stats for this species
+                stats[species][segment] = {
+                    **reads_mapped_stats
+                }
 
-        umi_df = self.data['umi_stats'].copy()
+        return stats
 
-        if sample_ids:
-            umi_df = umi_df[umi_df['sample_id'].isin(sample_ids)]
-
-        # Calculate UMI efficiency percentages
-        umi_df['umi_efficiency'] = (
-            umi_df['target_umis'] / umi_df['total_umis'] * 100
-        )
-
-        return umi_df
-
-    def analyze_contamination(self, sample_ids: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
-        """
-        Analyze contamination levels for LASV and HAZV.
-
-        Args:
-            sample_ids: Optional list of specific samples to analyze
-
-        Returns:
-            Dictionary with contamination analysis results
-        """
-        contamination_results = {}
-
-        # LASV contamination
-        if 'contamination_lasv' in self.data:
-            lasv_df = self.data['contamination_lasv'].copy()
-            if sample_ids:
-                lasv_df = lasv_df[lasv_df['sample_id'].isin(sample_ids)]
-
-            # Calculate relative contamination
-            lasv_df['contamination_percentage'] = (
-                lasv_df['contaminant_reads'] / lasv_df['total_reads'] * 100
-            )
-            contamination_results['lasv'] = lasv_df
-
-        # HAZV contamination
-        if 'contamination_hazv' in self.data:
-            hazv_df = self.data['contamination_hazv'].copy()
-            if sample_ids:
-                hazv_df = hazv_df[hazv_df['sample_id'].isin(sample_ids)]
-
-            # Calculate relative contamination
-            hazv_df['contamination_percentage'] = (
-                hazv_df['contaminant_reads'] / hazv_df['total_reads'] * 100
-            )
-            contamination_results['hazv'] = hazv_df
-
-        return contamination_results
-
-    def calculate_segment_statistics(self, sample_ids: Optional[List[str]] = None) -> pd.DataFrame:
-        """
-        Calculate per-segment read statistics.
-
-        Args:
-            sample_ids: Optional list of specific samples to analyze
-
-        Returns:
-            DataFrame with per-segment statistics
-        """
-        if 'read_counts' not in self.data:
-            logger.warning("No read count data available")
-            return pd.DataFrame()
-
-        read_counts_df = self.data['read_counts'].copy()
-
-        if sample_ids:
-            read_counts_df = read_counts_df[read_counts_df['sample_id'].isin(sample_ids)]
-
-        # Calculate percentage of reads per segment
-        read_counts_df['segment_percentage'] = (
-            read_counts_df['segment_reads'] / read_counts_df['total_reads'] * 100
-        )
-
-        return read_counts_df
 
     def generate_summary_stats(self, sample_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """
@@ -225,44 +143,37 @@ class ReadStatsAnalyzer(BaseAnalyzer):
         """
         stats = {}
 
-        # Mapping efficiency statistics
-        mapping_df = self.calculate_mapping_efficiency(sample_ids)
+            # Mapping efficiency statistics
+        mapping_df = self.data["mapping"]
         if not mapping_df.empty:
-            stats['mapping_efficiency'] = {
-                'mean_mapping_efficiency': mapping_df['mapping_efficiency'].mean(),
-                'median_mapping_efficiency': mapping_df['mapping_efficiency'].median(),
-                'min_mapping_efficiency': mapping_df['mapping_efficiency'].min(),
-                'max_mapping_efficiency': mapping_df['mapping_efficiency'].max(),
-                'mean_target_efficiency': mapping_df['target_efficiency'].mean(),
-                'sample_count': len(mapping_df)
-            }
+            stats['mapping'] = self.create_mapping_overview_per_segment_species(mapping_df)
 
-        # UMI statistics
-        umi_df = self.calculate_umi_statistics(sample_ids)
-        if not umi_df.empty:
-            stats['umi_efficiency'] = {
-                'mean_umi_efficiency': umi_df['umi_efficiency'].mean(),
-                'median_umi_efficiency': umi_df['umi_efficiency'].median(),
-                'min_umi_efficiency': umi_df['umi_efficiency'].min(),
-                'max_umi_efficiency': umi_df['umi_efficiency'].max(),
-                'sample_count': len(umi_df)
-            }
+        # # UMI statistics
+        # umi_df = self.calculate_umi_statistics(sample_ids)
+        # if not umi_df.empty:
+        #     stats['umi_efficiency'] = {
+        #         'mean_umi_efficiency': umi_df['umi_efficiency'].mean(),
+        #         'median_umi_efficiency': umi_df['umi_efficiency'].median(),
+        #         'min_umi_efficiency': umi_df['umi_efficiency'].min(),
+        #         'max_umi_efficiency': umi_df['umi_efficiency'].max(),
+        #         'sample_count': len(umi_df)
+        #     }
 
-        # Contamination statistics
-        contamination_data = self.analyze_contamination(sample_ids)
-        contamination_stats = {}
+        # # Contamination statistics
+        # contamination_data = self.analyze_contamination(sample_ids)
+        # contamination_stats = {}
 
-        for virus_type, df in contamination_data.items():
-            if not df.empty:
-                contamination_stats[virus_type] = {
-                    'mean_contamination': df['contamination_percentage'].mean(),
-                    'max_contamination': df['contamination_percentage'].max(),
-                    'samples_with_contamination': (df['contamination_percentage'] > 1.0).sum(),
-                    'sample_count': len(df)
-                }
+        # for virus_type, df in contamination_data.items():
+        #     if not df.empty:
+        #         contamination_stats[virus_type] = {
+        #             'mean_contamination': df['contamination_percentage'].mean(),
+        #             'max_contamination': df['contamination_percentage'].max(),
+        #             'samples_with_contamination': (df['contamination_percentage'] > 1.0).sum(),
+        #             'sample_count': len(df)
+        #         }
 
-        if contamination_stats:
-            stats['contamination'] = contamination_stats
+        # if contamination_stats:
+        #     stats['contamination'] = contamination_stats
 
         return stats
 

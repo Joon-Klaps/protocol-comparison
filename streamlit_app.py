@@ -461,10 +461,7 @@ data/
 │   ├── read_counts.tsv
 │   ├── umi_stats.tsv
 ├── mapping/
-│   ├── mapping_stats.tsv
-├── contamination/
-│   ├── lasv_contamination.tsv
-│   ├── hazv_contamination.tsv
+│   ├── mapping.tsv
 └── references/
     ├── reference_mapping.tsv
             """)

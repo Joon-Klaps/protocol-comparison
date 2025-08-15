@@ -8,5 +8,6 @@ tmp
 .nextflow*
 **/work
 sample_data/
-data/dash-app/
-__pycache__
+data/app/
+__pycache__/
+dashboard.log

@@ -1,3 +1,0 @@
-2025-08-14 11:55:14,399 - __main__ - INFO - Starting Viral Genomics Protocol Comparison Dashboard (Streamlit)
-2025-08-14 11:55:14,440 - __main__ - ERROR - Error running dashboard: Command '['/Users/joonklaps/opt/anaconda3/envs/intrahost-env/bin/python', '-m', 'streamlit', 'run', 'streamlit_app.py', '--server.address', 'localhost', '--server.port', '8501', '--logger.level', 'info']' returned non-zero exit status 1.
-2025-08-14 11:56:29,998 - __main__ - INFO - Starting Viral Genomics Protocol Comparison Dashboard (Streamlit)
