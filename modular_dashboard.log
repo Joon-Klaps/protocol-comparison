@@ -1,2 +1,0 @@
-2025-08-15 15:06:06,386 - modules.main - INFO - Registered page 'Read Processing Statistics' from module 'read_stats'
-2025-08-15 15:06:06,387 - modules.main - INFO - Registered page 'Mapping Statistics' from module 'read_stats'

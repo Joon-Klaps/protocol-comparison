@@ -94,6 +94,24 @@ class ModuleDiscovery:
         return items
 
 
+def load_css() -> str:
+    """
+    Load CSS from the styles.css file.
+
+    Returns:
+        CSS content as string
+    """
+    css_file = Path(__file__).parent / "styles.css"
+
+    if css_file.exists():
+        content = css_file.read_text(encoding='utf-8')
+        logger.info("CSS file loaded successfully from: %s (%d characters)", css_file, len(content))
+        return content
+    else:
+        logger.warning("CSS file not found: %s", css_file)
+        return ""
+
+
 class DataPathManager:
     """Manages data path configuration and validation."""
 
@@ -223,7 +241,6 @@ def render_sample_selection(available_samples: List[str]) -> Optional[List[str]]
     if not available_samples:
         return None
 
-    st.subheader("🧪 Sample Selection")
 
     col1, col2 = st.columns([2, 1])
 
@@ -403,7 +420,7 @@ def render_raw_data(data_dict: Dict[str, Any]):
 
 def render_module_tab(module_name: str, module_info: Dict[str, Any], data_path: str, selected_samples: Optional[List[str]]):
     """
-    Render a module as a single page with all components.
+    Render a module as a single page with sub-tabs for different content types.
 
     Args:
         module_name: Name of the module
@@ -427,49 +444,59 @@ def render_module_tab(module_name: str, module_info: Dict[str, Any], data_path: 
             st.warning(f"No samples found for {module_info['title']} analysis")
             return
 
-        # Show sample info
-        st.info(f"📊 Found {len(available_samples)} samples for analysis")
+        # Add some spacing and styling for sub-tabs
+        st.markdown("<br>", unsafe_allow_html=True)
 
-        # Summary Statistics Section
-        st.markdown("## 📊 Summary Statistics")
-        try:
-            if hasattr(tab_instance, 'get_summary_stats'):
-                summary_data = tab_instance.get_summary_stats(selected_samples)
-                render_summary_stats(summary_data)
-            else:
-                st.info("Summary statistics not available for this module")
-        except Exception as e:
-            st.error(f"Error loading summary statistics: {str(e)}")
+        # Create sub-tabs for this module with enhanced styling
+        sub_tab1, sub_tab2 = st.tabs([
+            "📊 **Summary & Plots**",
+            "📋 **Raw Data**"
+        ])
 
-        st.markdown("---")
+        # Summary & Plots Tab
+        with sub_tab1:
+            st.markdown('<div class="sub-tab-content">', unsafe_allow_html=True)
+            # Summary Statistics Section
+            st.markdown("## 📊 Summary Statistics")
+            try:
+                if hasattr(tab_instance, 'get_summary_stats'):
+                    summary_data = tab_instance.get_summary_stats(selected_samples)
+                    render_summary_stats(summary_data)
+                else:
+                    st.info("Summary statistics not available for this module")
+            except Exception as e:
+                st.error(f"Error loading summary statistics: {str(e)}")
 
-        # Visualizations Section
-        st.markdown("## 📈 Visualizations")
-        try:
-            if hasattr(tab_instance, 'get_custom_html'):
-                html_data = tab_instance.get_custom_html(selected_samples)
-                render_custom_html(html_data)
-            if hasattr(tab_instance, 'get_visualizations'):
-                viz_data = tab_instance.get_visualizations(selected_samples)
-                render_visualizations(viz_data)
-            else:
-                st.info("Visualizations not available for this module")
-        except Exception as e:
-            st.error(f"Error loading visualizations: {str(e)}")
+            st.markdown("---")
 
-        st.markdown("---")
+            # Visualizations Section
+            st.markdown("## 📈 Visualizations")
+            try:
+                if hasattr(tab_instance, 'get_custom_html'):
+                    html_data = tab_instance.get_custom_html(selected_samples)
+                    render_custom_html(html_data)
+                if hasattr(tab_instance, 'get_visualizations'):
+                    viz_data = tab_instance.get_visualizations(selected_samples)
+                    render_visualizations(viz_data)
+                else:
+                    st.info("Visualizations not available for this module")
+            except Exception as e:
+                st.error(f"Error loading visualizations: {str(e)}")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # Raw Data Section
-        st.markdown("## 📋 Raw Data")
-        try:
-            if hasattr(tab_instance, 'get_raw_data'):
-                raw_data = tab_instance.get_raw_data(selected_samples)
-                render_raw_data(raw_data)
-            else:
-                st.info("Raw data view not available for this module")
-        except Exception as e:
-            st.error(f"Error loading raw data: {str(e)}")
-
+        # Raw Data Tab
+        with sub_tab2:
+            st.markdown('<div class="sub-tab-content">', unsafe_allow_html=True)
+            st.markdown("## 📋 Raw Data Tables")
+            try:
+                if hasattr(tab_instance, 'get_raw_data'):
+                    raw_data = tab_instance.get_raw_data(selected_samples)
+                    render_raw_data(raw_data)
+                else:
+                    st.info("Raw data view not available for this module")
+            except Exception as e:
+                st.error(f"Error loading raw data: {str(e)}")
+            st.markdown('</div>', unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"Error initializing {module_info['title']} module: {str(e)}")
@@ -478,6 +505,12 @@ def render_module_tab(module_name: str, module_info: Dict[str, Any], data_path: 
 
 def main():
     """Main application entry point."""
+
+    # Load and apply custom CSS early
+    css_content = load_css()
+    if css_content:
+        st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
+        logger.info("CSS applied successfully")
 
     # Application header
     st.title("🧬 Viral Genomics Protocol Comparison")
@@ -515,19 +548,6 @@ def main():
     if not available_modules:
         st.error("No analysis modules found. Please check your modules directory.")
         return
-
-    # Show discovered modules in main page with larger font
-    st.markdown("## 🔬 Discovered Analysis Modules")
-    module_cols = st.columns(min(3, len(available_modules)))
-
-    for i, (module_name, module_info) in enumerate(available_modules.items()):
-        with module_cols[i % 3]:
-            st.markdown(f"""
-            <div style='padding: 1rem; border: 1px solid #ddd; border-radius: 0.5rem; margin-bottom: 1rem;'>
-                <h3 style='margin: 0; color: #1f77b4;'>{module_info.get('icon', '📊')} {module_info.get('title', module_name)}</h3>
-                <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>{module_info.get('description', 'No description available')}</p>
-            </div>
-            """, unsafe_allow_html=True)
 
     # Get sample information from first available module
     ordered_modules = discovery.get_ordered_modules()
@@ -567,13 +587,6 @@ def main():
 
     # Footer
     st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; color: #666; font-size: 0.8em;'>
-        Clean Modular Viral Genomics Dashboard<br>
-        Framework-agnostic components with dynamic tab generation
-    </div>
-    """, unsafe_allow_html=True)
-
 
 if __name__ == "__main__":
     main()

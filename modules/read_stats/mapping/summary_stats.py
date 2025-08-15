@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import pandas as pd
 import logging
+import math
 
 from ...base import DataManager
 
@@ -108,12 +109,11 @@ class MappingSummaryStats:
             max_idx = group['reads_mapped'].idxmax()
 
             reads_mapped_stats = {
-                'mean_mapping_reads': group['reads_mapped'].mean(),
+                'mean_mapping_reads': math.floor(group['reads_mapped'].mean()),
                 'min_mapping_reads': group['reads_mapped'].min(),
                 'min_mapping_reads_sample': group.loc[min_idx, 'sample'],
                 'max_mapping_reads': group['reads_mapped'].max(),
                 'max_mapping_reads_sample': group.loc[max_idx, 'sample'],
-                'std_mapping_reads': group['reads_mapped'].std(),
                 'sample_count': len(group)
             }
 

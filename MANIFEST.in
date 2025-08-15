@@ -1,0 +1,42 @@
+# Include the README
+include README.md
+include readme.md
+
+# Include all CSS files
+include *.css
+recursive-include * *.css
+
+# Include requirements
+include requirements.txt
+
+# Include all Python files
+recursive-include modules *.py
+
+# Include all HTML, JS, and other web assets
+recursive-include * *.html
+recursive-include * *.js
+recursive-include * *.json
+recursive-include * *.yaml
+recursive-include * *.yml
+
+# Include sample data
+recursive-include sample_data *
+
+# Include configuration files
+include *.ini
+include *.cfg
+include *.toml
+
+# Include documentation
+recursive-include docs *
+
+# Exclude unnecessary files
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.orig
+global-exclude *.rej
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude *.swp
+global-exclude *.swo

@@ -99,18 +99,11 @@ class ReadStatsTab:
                         'data': {
                             'Total Samples': stats.get('sample_count', 0),
                             'Average Retention': f"{stats.get('overall_efficiency', {}).get('mean_retention_pct', 0):.1f}%",
-                            'Total Raw Reads': f"{stats.get('total_raw_reads', 0):,}",
-                            'Total Final Reads': f"{stats.get('total_final_reads', 0):,}"
+                            'Mean Raw Reads': f"{stats.get('mean_raw_reads', 0):,}",
+                            'Mean Final Reads': f"{stats.get('mean_final_reads', 0):,}"
                         }
                     })
 
-                    # Detailed efficiency data
-                    if 'trimming_efficiency' in stats:
-                        summary['sections'].append({
-                            'title': 'Processing Pipeline Efficiency',
-                            'type': 'table',
-                            'data': stats
-                        })
             except Exception as e:
                 logger.error("Error generating read processing stats: %s", e)
 
@@ -119,25 +112,13 @@ class ReadStatsTab:
             try:
                 mapping_stats = self.components['mapping']['stats'].calculate_species_segment_stats(sample_ids)
                 if mapping_stats:
-                    total_species = len(mapping_stats)
-                    total_combinations = sum(len(segments) for segments in mapping_stats.values() if segments)
+                    for species, segments in mapping_stats.items():
+                        summary['sections'].append({
+                            'title': f'Mapping Statistics - {species}',
+                            'type': 'species_breakdown',
+                            'data': segments
+                        })
 
-                    summary['sections'].append({
-                        'title': 'Mapping Statistics',
-                        'type': 'metrics',
-                        'data': {
-                            'Species Analyzed': total_species,
-                            'Species-Segment Combinations': total_combinations,
-                            'Samples Processed': len(sample_ids) if sample_ids else len(self.get_available_samples())
-                        }
-                    })
-
-                    # Species breakdown
-                    summary['sections'].append({
-                        'title': 'Species Breakdown',
-                        'type': 'species_breakdown',
-                        'data': mapping_stats
-                    })
             except Exception as e:
                 logger.error("Error generating mapping stats: %s", e)
 

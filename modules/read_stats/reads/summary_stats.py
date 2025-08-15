@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import pandas as pd
 import logging
+import math
 
 from ...base import DataManager
 
@@ -113,8 +114,8 @@ class ReadProcessingSummaryStats:
                 'std_retention_pct': (reads_df['post_host_removal_reads'] / reads_df['raw_reads'] * 100).std(),
             },
             'sample_count': len(reads_df),
-            'total_raw_reads': reads_df['raw_reads'].sum(),
-            'total_final_reads': reads_df['post_host_removal_reads'].sum()
+            'mean_raw_reads': math.floor(reads_df['raw_reads'].mean()),
+            'mean_final_reads': math.floor(reads_df['post_host_removal_reads'].mean())
         }
 
         return stats

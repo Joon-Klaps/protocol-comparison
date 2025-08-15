@@ -1,0 +1,277 @@
+/* =============================================================================
+   GLOBAL LAYOUT IMPROVEMENTS
+   ============================================================================= */
+
+/* Improve main container width and remove excessive margins */
+.main .block-container {
+    max-width: none !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+/* Remove default Streamlit margins that cause shrinking */
+.stApp {
+    margin: 0 !important;
+}
+
+/* =============================================================================
+   MAIN MODULE TABS STYLING (First Level - Read Stats, Consensus, Coverage)
+   ============================================================================= */
+
+/* Target the main tabs container - full width, spaced design */
+.stTabs:not(.stTabs .stTabs) [data-baseweb="tab-list"] {
+    gap: 0 !important;
+    margin-bottom: 2rem !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    display: flex !important;
+    width: 100% !important;
+}
+
+/* Main tab buttons - full width distribution with background */
+.stTabs:not(.stTabs .stTabs) [data-baseweb="tab-list"] button[data-baseweb="tab"] {
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #f8fafc !important;
+    transition: all 0.2s ease !important;
+    position: relative !important;
+    flex: 1 !important;
+    width: auto !important;
+    min-width: auto !important;
+    border-radius: 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Main tab buttons hover effect */
+.stTabs:not(.stTabs .stTabs) [data-baseweb="tab-list"] button[data-baseweb="tab"]:hover {
+    background: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Active main tab button */
+.stTabs:not(.stTabs .stTabs) [data-baseweb="tab-list"] button[data-baseweb="tab"][aria-selected="true"] {
+    background: #e2e8f0 !important;
+    border-color: #9ca3af !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Main tab text styling - Full width with transparent background since button has background */
+.stTabs:not(.stTabs .stTabs) [data-baseweb="tab-list"] button[data-baseweb="tab"] p {
+    font-size: 1.5rem !important;
+    font-weight: 600 !important;
+    padding: 1.2rem 1rem !important;
+    margin: 0 !important;
+    border-radius: 12px !important;
+    background: transparent !important;
+    color: #374151 !important;
+    transition: all 0.2s ease !important;
+    border: none !important;
+    box-shadow: none !important;
+    text-align: center !important;
+    position: relative !important;
+    width: 100% !important;
+}
+
+/* Main tab hover effect - Only text color changes since button handles background */
+.stTabs:not(.stTabs .stTabs) [data-baseweb="tab-list"] button[data-baseweb="tab"]:hover p {
+    color: #111827 !important;
+}
+
+/* Active main tab - Only text styling since button handles background */
+.stTabs:not(.stTabs .stTabs) [data-baseweb="tab-list"] button[data-baseweb="tab"][aria-selected="true"] p {
+    color: #111827 !important;
+    font-weight: 700 !important;
+}
+
+/* Main tab content area - clean, borderless with simpler selector */
+.stTabs:not(.stTabs .stTabs) [data-baseweb="tab-panel"] {
+    background: transparent !important;
+    border: none !important;
+    padding: 2rem 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+}
+
+/* =============================================================================
+   FALLBACK STYLES - More aggressive selectors for main tabs
+   ============================================================================= */
+
+/* Fallback 1: Target all first-level tabs - Full width with subtle background */
+.stTabs > div[data-baseweb="tab-list"] button[data-baseweb="tab"] p {
+    font-size: 1.5rem !important;
+    font-weight: 600 !important;
+    padding: 1.2rem 1rem !important;
+    background: #f8fafc !important;
+    color: #374151 !important;
+    border-radius: 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+    text-align: center !important;
+    width: 100% !important;
+}
+
+/* Fallback 2: Even more general selector - with background */
+.stTabs button[data-baseweb="tab"] p {
+    font-size: 1.3rem !important;
+    font-weight: 600 !important;
+    padding: 1rem 1rem !important;
+    color: #374151 !important;
+    background: #f8fafc !important;
+    border-radius: 10px !important;
+}
+
+/* Fallback 3: Target by position - Full width with subtle background */
+.stTabs:first-of-type [data-baseweb="tab-list"] button[data-baseweb="tab"] p {
+    font-size: 1.5rem !important;
+    font-weight: 600 !important;
+    padding: 1.2rem 1rem !important;
+    background: #f8fafc !important;
+    color: #374151 !important;
+    border-radius: 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+    width: 100% !important;
+}
+
+/* =============================================================================
+   SUB-TABS STYLING (Second Level - Summary & Visualizations, Raw Data)
+   ============================================================================= */
+
+/* Sub-tab container - rounded edges with subtle background */
+.stTabs .stTabs [data-baseweb="tab-list"] {
+    margin: 1.5rem 0 1rem 0 !important;
+    padding: 0.4rem !important;
+    background: #f8fafc !important;
+    border-radius: 22px !important;
+    border: 1px solid #e2e8f0 !important;
+    display: flex !important;
+    justify-content: center !important;
+    max-width: 500px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+/* Sub-tab buttons - pill-shaped, compact */
+.stTabs .stTabs [data-baseweb="tab-list"] button[data-baseweb="tab"] {
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 0.2rem !important;
+    background: transparent !important;
+    transition: all 0.2s ease !important;
+    flex: 1 !important;
+}
+
+/* Sub-tab text styling - rounded edges with subtle background */
+.stTabs .stTabs [data-baseweb="tab-list"] button[data-baseweb="tab"] p {
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+    padding: 0.7rem 1.3rem !important;
+    margin: 0 !important;
+    border-radius: 18px !important;
+    background: #f8fafc !important;
+    color: #64748b !important;
+    border: 1px solid #e2e8f0 !important;
+    transition: all 0.2s ease !important;
+    text-align: center !important;
+}
+
+/* Sub-tab hover effect - gentle highlight with rounded background */
+.stTabs .stTabs [data-baseweb="tab-list"] button[data-baseweb="tab"]:hover p {
+    background: #f1f5f9 !important;
+    color: #475569 !important;
+    border-color: #cbd5e1 !important;
+}
+
+/* Active sub-tab - clear distinction with rounded background */
+.stTabs .stTabs [data-baseweb="tab-list"] button[data-baseweb="tab"][aria-selected="true"] p {
+    background: #e2e8f0 !important;
+    color: #1e293b !important;
+    border-color: #9ca3af !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+    font-weight: 700 !important;
+}
+
+/* Sub-tab content area - clean, minimal */
+.stTabs .stTabs [data-baseweb="tab-panel"] {
+    background: transparent !important;
+    border: none !important;
+    padding: 1.5rem 0 !important;
+    margin-top: 0 !important;
+    border-radius: 0 !important;
+}
+
+/* =============================================================================
+   CONTENT IMPROVEMENTS
+   ============================================================================= */
+
+/* Remove borders from all tab-related elements */
+.stTabs [data-baseweb="tab-list"] {
+    border-bottom: none !important;
+}
+
+/* Improve content spacing */
+.stTabs [data-baseweb="tab-panel"] > div {
+    padding: 0 !important;
+}
+
+/* Make expandable sections cleaner */
+.streamlit-expanderHeader {
+    background: #f8fafc !important;
+    border-radius: 8px !important;
+    border: 1px solid #e2e8f0 !important;
+}
+
+/* Clean up metrics display */
+.metric-container {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: none !important;
+    margin: 1rem 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* =============================================================================
+   RESPONSIVE IMPROVEMENTS
+   ============================================================================= */
+
+/* Ensure tabs work well on different screen sizes */
+@media (max-width: 768px) {
+    .stTabs[data-baseweb="tab-list"]:not(.stTabs .stTabs [data-baseweb="tab-list"]) button[data-baseweb="tab"] {
+        min-width: 150px;
+        margin: 0 0.2rem !important;
+    }
+
+    .stTabs[data-baseweb="tab-list"]:not(.stTabs .stTabs [data-baseweb="tab-list"]) button[data-baseweb="tab"] p {
+        font-size: 1.1rem !important;
+        padding: 1rem 1.5rem !important;
+    }
+}
+
+/* =============================================================================
+   GENERAL CLEANUP
+   ============================================================================= */
+
+/* Remove any unwanted borders or outlines */
+.stTabs * {
+    outline: none !important;
+}
+
+/* Improve loading states */
+.stSpinner {
+    text-align: center;
+    color: #4f46e5;
+}
+
+/* Clean alert styling */
+.stAlert {
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
