@@ -1,0 +1,579 @@
+#!/usr/bin/env python3
+"""
+Clean modular Streamlit application for viral genomics protocol comparison.
+
+This application automatically discovers modules and creates tabs dynamically.
+All Streamlit UI code is contained here - modules return pure data/visualizations.
+"""
+
+import streamlit as st
+import sys
+import os
+from pathlib import Path
+import importlib
+import logging
+from typing import Dict, List, Any, Optional
+import time
+
+# Add the current directory to Python path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Configure page
+st.set_page_config(
+    page_title="Viral Genomics Analysis - Modular Dashboard",
+    page_icon="🧬",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+
+class ModuleDiscovery:
+    """Discovers and loads available analysis modules."""
+
+    def __init__(self, modules_path: Path):
+        """
+        Initialize module discovery.
+
+        Args:
+            modules_path: Path to modules directory
+        """
+        self.modules_path = modules_path
+        self.available_modules = {}
+
+    def discover_modules(self) -> Dict[str, Any]:
+        """
+        Discover all available modules with tab.py files.
+
+        Returns:
+            Dictionary of discovered modules with their metadata
+        """
+        self.available_modules = {}
+
+        if not self.modules_path.exists():
+            logger.warning("Modules path does not exist: %s", self.modules_path)
+            return self.available_modules
+
+        # Look for module directories
+        for module_dir in self.modules_path.iterdir():
+            if module_dir.is_dir() and not module_dir.name.startswith('_'):
+                tab_file = module_dir / 'tab.py'
+
+                if tab_file.exists():
+                    try:
+                        # Import the module's tab component
+                        module_name = f"modules.{module_dir.name}.tab"
+                        tab_module = importlib.import_module(module_name)
+
+                        # Get tab info
+                        if hasattr(tab_module, 'get_tab_info'):
+                            tab_info = tab_module.get_tab_info()
+                            tab_info['module'] = tab_module
+                            tab_info['module_path'] = module_dir
+
+                            self.available_modules[module_dir.name] = tab_info
+                            logger.info("Discovered module: %s", module_dir.name)
+
+                    except Exception as e:
+                        logger.warning("Failed to load module %s: %s", module_dir.name, e)
+
+        return self.available_modules
+
+    def get_ordered_modules(self) -> List[tuple]:
+        """
+        Get modules ordered by their specified order.
+
+        Returns:
+            List of (module_name, module_info) tuples in display order
+        """
+        items = list(self.available_modules.items())
+        items.sort(key=lambda x: x[1].get('order', 999))
+        return items
+
+
+class DataPathManager:
+    """Manages data path configuration and validation."""
+
+    @staticmethod
+    def get_default_data_path() -> Optional[str]:
+        """Get default data path from various sources."""
+        # Check environment variable
+        env_path = os.environ.get('DEFAULT_DATA_PATH', '')
+        if env_path and Path(env_path).exists():
+            return env_path
+
+        # Check common locations
+        possible_paths = [
+            "sample_data",
+            "data",
+            "../data",
+            str(Path.cwd() / "sample_data"),
+            str(Path.cwd() / "data")
+        ]
+
+        for path in possible_paths:
+            if Path(path).exists():
+                return path
+
+        return None
+
+    @staticmethod
+    def validate_data_path(data_path: str) -> tuple[bool, str]:
+        """
+        Validate data path and return status.
+
+        Args:
+            data_path: Path to validate
+
+        Returns:
+            Tuple of (is_valid, status_message)
+        """
+        if not data_path:
+            return False, "No data path provided"
+
+        path = Path(data_path)
+        if not path.exists():
+            return False, f"Path does not exist: {data_path}"
+
+        if not path.is_dir():
+            return False, f"Path is not a directory: {data_path}"
+
+        # Check for expected subdirectories
+        expected_subdirs = ['consensus', 'coverage', 'read_stats', 'mapping']
+        found_subdirs = [d.name for d in path.iterdir() if d.is_dir()]
+
+        if not any(subdir in found_subdirs for subdir in expected_subdirs):
+            return False, f"No expected data subdirectories found in {data_path}"
+
+        return True, f"Valid data path: {data_path}"
+
+
+def render_sidebar() -> tuple[str, bool, bool]:
+    """
+    Render sidebar configuration.
+
+    Returns:
+        Tuple of (data_path, data_path_valid, reload_requested)
+    """
+    with st.sidebar:
+        st.title("🔧 Configuration")
+
+        # Data path configuration
+        st.subheader("📁 Data Configuration")
+
+        default_path = DataPathManager.get_default_data_path()
+
+        data_path = st.text_input(
+            "Data Directory Path:",
+            value=default_path or "",
+            help="Path to your analysis data directory",
+            placeholder="/path/to/your/data"
+        )
+
+        # Validate data path
+        data_path_valid = False
+        if data_path:
+            is_valid, status_msg = DataPathManager.validate_data_path(data_path)
+            if is_valid:
+                st.success(status_msg)
+                data_path_valid = True
+            else:
+                st.error(status_msg)
+        else:
+            st.info("👆 Please enter a data directory path to get started")
+
+        # Reload data button
+        st.markdown("---")
+        st.subheader("🔄 Data Management")
+
+        reload_requested = False
+        if data_path_valid:
+            if st.button("🔄 Reload Data", type="primary", use_container_width=True):
+                reload_requested = True
+                # Show loading animation
+                with st.spinner("Loading data..."):
+                    time.sleep(1)  # Brief delay for visual feedback
+                    # Clear any cached data
+                    if 'cached_samples' in st.session_state:
+                        del st.session_state['cached_samples']
+                    if 'cached_modules' in st.session_state:
+                        del st.session_state['cached_modules']
+                st.success("Data reloaded successfully!")
+                st.rerun()
+        else:
+            st.button("🔄 Reload Data", disabled=True, use_container_width=True)
+            st.caption("Configure valid data path first")
+
+        return data_path, data_path_valid, reload_requested
+
+
+def render_sample_selection(available_samples: List[str]) -> Optional[List[str]]:
+    """
+    Render sample selection interface.
+
+    Args:
+        available_samples: List of available sample IDs
+
+    Returns:
+        Selected sample IDs or None for all samples
+    """
+    if not available_samples:
+        return None
+
+    st.subheader("🧪 Sample Selection")
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        selection_type = st.radio(
+            "Selection mode:",
+            ["All samples", "Custom selection"],
+            horizontal=True
+        )
+
+    with col2:
+        st.metric("Available Samples", len(available_samples))
+
+    if selection_type == "Custom selection":
+        selected_samples = st.multiselect(
+            "Select samples:",
+            options=available_samples,
+            default=available_samples[:5] if len(available_samples) > 5 else available_samples,
+            help="Choose specific samples for analysis"
+        )
+        return selected_samples if selected_samples else None
+
+    return None  # Return None for all samples
+
+
+def render_metrics_section(section_data: Dict[str, Any]):
+    """Render a metrics section."""
+    data = section_data.get('data', {})
+    if not data:
+        return
+
+    # Create columns for metrics
+    cols = st.columns(len(data))
+
+    for i, (label, value) in enumerate(data.items()):
+        with cols[i]:
+            st.metric(label, value)
+
+
+def render_table_section(section_data: Dict[str, Any]):
+    """Render a table section."""
+    data = section_data.get('data', {})
+    if not data:
+        return
+
+    # Display as expandable table
+    with st.expander("📋 View Details", expanded=False):
+        st.json(data)
+
+
+def render_species_breakdown(section_data: Dict[str, Any]):
+    """Render species breakdown section."""
+    data = section_data.get('data', {})
+    if not data:
+        return
+
+    for species, stats in data.items():
+        with st.expander(f"🦠 **{species}**"):
+            if isinstance(stats, dict):
+                cols = st.columns(len(stats))
+                for i, (key, value) in enumerate(stats.items()):
+                    with cols[i]:
+                        st.metric(key.replace('_', ' ').title(), f"{value}")
+
+
+def render_summary_stats(summary_data: Dict[str, Any]):
+    """
+    Render summary statistics section.
+
+    Args:
+        summary_data: Summary statistics data from tab component
+    """
+    if not summary_data or not summary_data.get('sections'):
+        st.info("No summary statistics available")
+        return
+
+    for section in summary_data['sections']:
+        section_type = section.get('type', 'unknown')
+        title = section.get('title', 'Unknown Section')
+
+        st.subheader(title)
+
+        if section_type == 'metrics':
+            render_metrics_section(section)
+        elif section_type == 'table':
+            render_table_section(section)
+        elif section_type in ['species_breakdown', 'species_recovery', 'species_coverage']:
+            render_species_breakdown(section)
+        else:
+            # Generic rendering
+            data = section.get('data', {})
+            if data:
+                st.json(data)
+
+
+def render_visualizations(viz_data: Dict[str, Any]):
+    """
+    Render visualizations section.
+
+    Args:
+        viz_data: Visualization data from tab component
+    """
+    figures = viz_data.get('figures', [])
+
+    if not figures:
+        st.info("No visualizations available")
+        return
+
+    for fig_data in figures:
+        title = fig_data.get('title', 'Visualization')
+        description = fig_data.get('description', '')
+        figure = fig_data.get('figure')
+
+        st.subheader(title)
+        if description:
+            st.caption(description)
+
+        if figure:
+            try:
+                st.plotly_chart(figure, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error displaying visualization: {str(e)}")
+
+
+def render_custom_html(html_data: Dict[str, Any]):
+    """
+    Render custom HTML components.
+
+    Args:
+        html_data: Custom HTML data from tab component
+    """
+    components = html_data.get('components', [])
+
+    if not components:
+        st.info("No custom components available")
+        return
+
+    for component in components:
+        title = component.get('title', 'Custom Component')
+        description = component.get('description', '')
+        html_content = component.get('html', '')
+
+        st.subheader(title)
+        if description:
+            st.caption(description)
+
+        if html_content:
+            try:
+                st.components.v1.html(html_content, height=400, scrolling=True)
+            except Exception as e:
+                st.error(f"Error displaying custom HTML: {str(e)}")
+
+
+def render_raw_data(data_dict: Dict[str, Any]):
+    """
+    Render raw data tables.
+
+    Args:
+        data_dict: Raw data from tab component
+    """
+    tables = data_dict.get('tables', [])
+
+    if not tables:
+        st.info("No raw data available")
+        return
+
+    for table_data in tables:
+        title = table_data.get('title', 'Data Table')
+        df = table_data.get('data')
+
+        with st.expander(f"📊 {title}"):
+            if df is not None and not df.empty:
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.info("No data available")
+
+
+def render_module_tab(module_name: str, module_info: Dict[str, Any], data_path: str, selected_samples: Optional[List[str]]):
+    """
+    Render a module as a single page with all components.
+
+    Args:
+        module_name: Name of the module
+        module_info: Module information dictionary
+        data_path: Path to data directory
+        selected_samples: Selected sample IDs
+    """
+    try:
+        # Create tab instance
+        tab_module = module_info['module']
+        if not hasattr(tab_module, 'create_tab'):
+            st.error(f"Module {module_name} does not have create_tab function")
+            return
+
+        tab_instance = tab_module.create_tab(Path(data_path))
+
+        # Get available samples
+        available_samples = tab_instance.get_available_samples()
+
+        if not available_samples:
+            st.warning(f"No samples found for {module_info['title']} analysis")
+            return
+
+        # Show sample info
+        st.info(f"📊 Found {len(available_samples)} samples for analysis")
+
+        # Summary Statistics Section
+        st.markdown("## 📊 Summary Statistics")
+        try:
+            if hasattr(tab_instance, 'get_summary_stats'):
+                summary_data = tab_instance.get_summary_stats(selected_samples)
+                render_summary_stats(summary_data)
+            else:
+                st.info("Summary statistics not available for this module")
+        except Exception as e:
+            st.error(f"Error loading summary statistics: {str(e)}")
+
+        st.markdown("---")
+
+        # Visualizations Section
+        st.markdown("## 📈 Visualizations")
+        try:
+            if hasattr(tab_instance, 'get_custom_html'):
+                html_data = tab_instance.get_custom_html(selected_samples)
+                render_custom_html(html_data)
+            if hasattr(tab_instance, 'get_visualizations'):
+                viz_data = tab_instance.get_visualizations(selected_samples)
+                render_visualizations(viz_data)
+            else:
+                st.info("Visualizations not available for this module")
+        except Exception as e:
+            st.error(f"Error loading visualizations: {str(e)}")
+
+        st.markdown("---")
+
+        # Raw Data Section
+        st.markdown("## 📋 Raw Data")
+        try:
+            if hasattr(tab_instance, 'get_raw_data'):
+                raw_data = tab_instance.get_raw_data(selected_samples)
+                render_raw_data(raw_data)
+            else:
+                st.info("Raw data view not available for this module")
+        except Exception as e:
+            st.error(f"Error loading raw data: {str(e)}")
+
+
+    except Exception as e:
+        st.error(f"Error initializing {module_info['title']} module: {str(e)}")
+        logger.error("Error in module %s: %s", module_name, e)
+
+
+def main():
+    """Main application entry point."""
+
+    # Application header
+    st.title("🧬 Viral Genomics Protocol Comparison")
+    st.markdown("**Clean Modular Analysis Dashboard**")
+
+    # Sidebar configuration
+    data_path, data_path_valid, reload_requested = render_sidebar()
+
+    if not data_path_valid:
+        # Welcome screen
+        st.markdown("""
+        ## Welcome to the Clean Modular Dashboard! 🎉
+
+        This dashboard automatically discovers analysis modules and creates tabs dynamically.
+        Each module provides:
+
+        - **📊 Summary Statistics** - Key metrics and analysis results
+        - **📈 Visualizations** - Interactive plots and charts
+        - **📋 Raw Data** - Access to underlying data tables
+        - **🎨 Custom Components** - Module-specific HTML components
+
+        ### Getting Started:
+
+        1. **Configure Data Path** 👈 Enter your data directory path in the sidebar
+        2. **Select Samples** - Choose which samples to analyze
+        3. **Explore Modules** - Navigate through the automatically generated tabs
+        """)
+        return
+
+    # Discover modules
+    modules_path = Path(__file__).parent / "modules"
+    discovery = ModuleDiscovery(modules_path)
+    available_modules = discovery.discover_modules()
+
+    if not available_modules:
+        st.error("No analysis modules found. Please check your modules directory.")
+        return
+
+    # Show discovered modules in main page with larger font
+    st.markdown("## 🔬 Discovered Analysis Modules")
+    module_cols = st.columns(min(3, len(available_modules)))
+
+    for i, (module_name, module_info) in enumerate(available_modules.items()):
+        with module_cols[i % 3]:
+            st.markdown(f"""
+            <div style='padding: 1rem; border: 1px solid #ddd; border-radius: 0.5rem; margin-bottom: 1rem;'>
+                <h3 style='margin: 0; color: #1f77b4;'>{module_info.get('icon', '📊')} {module_info.get('title', module_name)}</h3>
+                <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>{module_info.get('description', 'No description available')}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Get sample information from first available module
+    ordered_modules = discovery.get_ordered_modules()
+    all_samples = []
+
+    try:
+        # Try to get samples from the first working module
+        for module_name, module_info in ordered_modules:
+            try:
+                tab_module = module_info['module']
+                temp_tab = tab_module.create_tab(Path(data_path))
+                all_samples = temp_tab.get_available_samples()
+                if all_samples:
+                    break
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning("Error getting sample information: %s", e)
+
+    # Sample selection
+    selected_samples = None
+    if all_samples:
+        selected_samples = render_sample_selection(all_samples)
+
+    st.markdown("---")
+
+    # Create main tabs for modules
+    if ordered_modules:
+        tab_names = [f"{info.get('icon', '📊')} {info.get('title', name)}"
+                    for name, info in ordered_modules]
+
+        main_tabs = st.tabs(tab_names)
+
+        for i, (module_name, module_info) in enumerate(ordered_modules):
+            with main_tabs[i]:
+                render_module_tab(module_name, module_info, data_path, selected_samples)
+
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; color: #666; font-size: 0.8em;'>
+        Clean Modular Viral Genomics Dashboard<br>
+        Framework-agnostic components with dynamic tab generation
+    </div>
+    """, unsafe_allow_html=True)
+
+
+if __name__ == "__main__":
+    main()

@@ -60,6 +60,18 @@ class MappingVisualizations:
         # Get unique segments for this species
         segments = species_data['segment'].unique()
 
+        # Define color palette for segments - shades of blue and red for 3 segments
+        segment_colors = {
+            'mapped': ['#84b7f3', '#547eb4', '#2e4667'],  # Light Blue, Medium Blue, Dark Blue
+            'unmapped': ['#f7e4ab', '#f2bf8b', '#e5806a']  # Light Red, Medium Red, Dark Red
+        }
+
+        # Create color mappings for each segment
+        mapped_colors = {segment: segment_colors['mapped'][i % len(segment_colors['mapped'])]
+                        for i, segment in enumerate(segments)}
+        unmapped_colors = {segment: segment_colors['unmapped'][i % len(segment_colors['unmapped'])]
+                          for i, segment in enumerate(segments)}
+
         # Add all 4 trace types for each segment (Raw Mapped, Raw Unmapped, % Mapped, % Unmapped)
         for segment in segments:
             segment_data = species_data[species_data['segment'] == segment]
@@ -69,10 +81,9 @@ class MappingVisualizations:
                 x=segment_data['sample'],
                 y=segment_data['reads_mapped'],
                 name=f'Mapped - {segment}',
-                log_y=True,
                 visible=True,
                 legendgroup=f'mapped_{segment}',
-                marker_color='lightblue' if segment == segments[0] else 'darkblue'
+                marker_color=mapped_colors[segment]
             ))
 
             # Raw Unmapped (initially hidden)
@@ -80,10 +91,9 @@ class MappingVisualizations:
                 x=segment_data['sample'],
                 y=segment_data['reads_unmapped'],
                 name=f'Unmapped - {segment}',
-                log_y=True,
                 visible=False,
                 legendgroup=f'unmapped_{segment}',
-                marker_color='lightcoral' if segment == segments[0] else 'darkred'
+                marker_color=unmapped_colors[segment]
             ))
 
             # % Mapped (initially hidden)
@@ -93,7 +103,7 @@ class MappingVisualizations:
                 name=f'Mapped % - {segment}',
                 visible=False,
                 legendgroup=f'mapped_pct_{segment}',
-                marker_color='lightblue' if segment == segments[0] else 'darkblue'
+                marker_color=mapped_colors[segment]
             ))
 
             # % Unmapped (initially hidden)
@@ -103,63 +113,61 @@ class MappingVisualizations:
                 name=f'Unmapped % - {segment}',
                 visible=False,
                 legendgroup=f'unmapped_pct_{segment}',
-                marker_color='lightcoral' if segment == segments[0] else 'darkred'
+                marker_color=unmapped_colors[segment]
             ))
 
         n_segments = len(segments)
 
-        # Create 2x2 button layout: Data Type (Raw/%) x Read Type (Mapped/Unmapped)
+        # Create visibility patterns for all 4 combinations
+        # [Raw Mapped, Raw Unmapped, % Mapped, % Unmapped] per segment
+        visibility_patterns = {
+            'raw_mapped': [True, False, False, False] * n_segments,
+            'raw_unmapped': [False, True, False, False] * n_segments,
+            'pct_mapped': [False, False, True, False] * n_segments,
+            'pct_unmapped': [False, False, False, True] * n_segments
+        }
+
+        # Create single row with all 4 buttons
         updatemenus = [
-            # Data Type buttons (Raw vs Percentage)
             dict(
                 type="buttons",
                 direction="right",
                 showactive=True,
-                x=0.1,
+                x=-0.05,
                 xanchor="left",
                 y=1.15,
                 yanchor="top",
                 buttons=[
                     dict(
-                        label="Raw Counts",
+                        label="Raw Mapped",
                         method="update",
                         args=[{
-                            "visible": [True, False, False, False] * n_segments,
+                            "visible": visibility_patterns['raw_mapped'],
                             "yaxis.title": "Number of Reads"
                         }]
                     ),
                     dict(
-                        label="Percentages",
+                        label="Raw Unmapped",
                         method="update",
                         args=[{
-                            "visible": [False, False, True, False] * n_segments,
-                            "yaxis.title": "Percentage (%)"
-                        }]
-                    )
-                ]
-            ),
-            # Read Type buttons (Mapped vs Unmapped)
-            dict(
-                type="buttons",
-                direction="right",
-                showactive=True,
-                x=0.6,
-                xanchor="left",
-                y=1.15,
-                yanchor="top",
-                buttons=[
-                    dict(
-                        label="Mapped Reads",
-                        method="update",
-                        args=[{
-                            "visible": [True, False, True, False] * n_segments
+                            "visible": visibility_patterns['raw_unmapped'],
+                            "yaxis.title": "Number of Reads"
                         }]
                     ),
                     dict(
-                        label="Unmapped Reads",
+                        label="% Mapped",
                         method="update",
                         args=[{
-                            "visible": [False, True, False, True] * n_segments
+                            "visible": visibility_patterns['pct_mapped'],
+                            "yaxis.title": "Percentage (%)"
+                        }]
+                    ),
+                    dict(
+                        label="% Unmapped",
+                        method="update",
+                        args=[{
+                            "visible": visibility_patterns['pct_unmapped'],
+                            "yaxis.title": "Percentage (%)"
                         }]
                     )
                 ]
@@ -167,8 +175,7 @@ class MappingVisualizations:
         ]
 
         fig.update_layout(
-            title=f'Mapping Statistics - {species}',
-            xaxis_title='Sample ID',
+            xaxis_title='',
             yaxis_title='Number of Reads',
             xaxis_tickangle=-45,
             height=600,
@@ -183,6 +190,10 @@ class MappingVisualizations:
                 x=0.5
             )
         )
+
+        # Set initial visibility to Raw Mapped
+        for i, trace in enumerate(fig.data):
+            trace.visible = visibility_patterns['raw_mapped'][i]
 
         return fig
 
@@ -210,6 +221,6 @@ class MappingVisualizations:
         for species in species_list:
             species_fig = self.create_interactive_mapping_plot(species, sample_ids)
             if species_fig.data:
-                figures[f'mapping_{species.lower()}'] = species_fig
+                figures[f'Mapping Statistics - {species}'] = species_fig
 
         return figures

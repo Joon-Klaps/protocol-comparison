@@ -37,12 +37,12 @@ run: run-modular
 # Run new modular Streamlit dashboard with sample data
 run-modular:
 	@echo "🚀 Starting modular dashboard..."
-	streamlit run modular_streamlit_app.py
+	streamlit run streamlit_app.py
 
 # Run modular dashboard with specific data path
 run-modular-with-data:
 	@echo "🚀 Starting modular dashboard with sample data..."
-	DEFAULT_DATA_PATH=sample_data streamlit run modular_streamlit_app.py
+	DEFAULT_DATA_PATH=sample_data streamlit run streamlit_app.py
 
 # Run legacy monolithic Streamlit dashboard (for compatibility)
 run-legacy:
@@ -52,7 +52,7 @@ run-legacy:
 # Run modular dashboard in development mode
 dev:
 	@echo "🛠️  Starting modular dashboard in development mode..."
-	DEFAULT_DATA_PATH=sample_data streamlit run modular_streamlit_app.py --server.address 0.0.0.0
+	DEFAULT_DATA_PATH=sample_data streamlit run streamlit_app.py --server.address 0.0.0.0
 
 # Clean up generated files and caches
 clean:
@@ -85,7 +85,7 @@ info:
 	@echo ""
 	@echo "📁 Project Structure:"
 	@echo "===================="
-	@echo "Modular app:     modular_streamlit_app.py"
+	@echo "Modular app:     streamlit_app.py"
 	@echo "Legacy app:      streamlit_app.py"
 	@echo "Launcher:        run_streamlit.py"
 	@echo "Modules:         modules/"

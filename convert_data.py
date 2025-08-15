@@ -59,7 +59,7 @@ def extract_mapping(file_path: Path) -> pd.DataFrame:
             logging.error("Column '%s' not found in the main DataFrame", column)
             sys.exit(1)
 
-    mapping_stats = df[columns_of_interest].dropna()
+    mapping_stats = df[columns_of_interest]
     return pd.DataFrame(mapping_stats)
 
 
@@ -87,7 +87,7 @@ def extract_reads(file_path: Path) -> pd.DataFrame:
             logging.error("Column '%s' not found in the main DataFrame", column)
             sys.exit(1)
 
-    read_stats = df[columns_of_interest].dropna()
+    read_stats = df[columns_of_interest]
     return pd.DataFrame(read_stats)
 
 def find_locations(directory: Path) -> Dict[str, Path]:
