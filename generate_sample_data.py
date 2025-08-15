@@ -237,8 +237,13 @@ def main():
 
     print("\n" + "=" * 60)
     print("Data generation complete!")
-    print(f"\nTo test the dashboard with this data:")
-    print(f"  python run_dashboard.py --data-path {output_path}")
+    print("\nTo test the dashboard with this data:")
+    print("  # Modular dashboard (recommended):")
+    print(f"  DEFAULT_DATA_PATH={output_path} streamlit run modular_streamlit_app.py")
+    print("  # Or using make:")
+    print("  make run-modular")
+    print("  # Legacy dashboard:")
+    print(f"  python run_streamlit.py --data-path {output_path}")
 
 
 if __name__ == "__main__":

@@ -1,13 +1,14 @@
 """
-Consensus analysis module for viral genomics data.
+Consensus analysis module.
 
-This module provides a unified interface using the new hierarchical modular structure.
-For backward compatibility, it imports from the consensus package.
+This module handles consensus sequence analysis:
+- Genome recovery statistics
+- ANI calculations
+- Consensus sequence comparisons
 """
 
-# Import from the new modular structure
-from .consensus.summary_stats import ConsensusSummaryStats, ConsensusDataManager
-from .consensus.visualizations import ConsensusVisualizations
+from .summary_stats import ConsensusSummaryStats, ConsensusDataManager
+from .visualizations import ConsensusVisualizations
 
 # Main unified analyzer
 class ConsensusAnalyzer:
@@ -97,5 +98,4 @@ class ConsensusAnalyzer:
         logging.getLogger(__name__).info("Consensus analysis results exported to %s", output_path)
 
 
-# For backward compatibility, expose the main analyzer at module level
-__all__ = ['ConsensusAnalyzer', 'ConsensusDataManager']
+__all__ = ['ConsensusSummaryStats', 'ConsensusVisualizations', 'ConsensusAnalyzer', 'ConsensusDataManager']

@@ -1,15 +1,38 @@
 """
-Read statistics analysis module for viral genomics data.
+Read statistics analysis module.
 
-This module provides a unified interface using the new hierarchical modular structure.
-For backward compatibility, it imports from the read_stats package.
+This module provides unified access to read processing and mapping statistics
+through a hierarchical modular structure. It also provides Streamlit page
+components for web-based dashboards.
 """
 
-# Import from the new modular structure
-from .read_stats.reads import ReadProcessingSummaryStats, ReadProcessingVisualizations
-from .read_stats.mapping import MappingSummaryStats, MappingVisualizations
+from .reads import ReadProcessingSummaryStats, ReadProcessingVisualizations
+from .mapping import MappingSummaryStats, MappingVisualizations
 
-# Main unified analyzer
+# Try to import streamlit components (optional)
+try:
+    from .streamlit_pages import get_read_stats_pages, ReadProcessingPage, MappingStatisticsPage
+    _STREAMLIT_AVAILABLE = True
+except ImportError:
+    _STREAMLIT_AVAILABLE = False
+
+__all__ = [
+    'ReadProcessingSummaryStats',
+    'ReadProcessingVisualizations',
+    'MappingSummaryStats',
+    'MappingVisualizations',
+    'ReadStatsAnalyzer'
+]
+
+# Add streamlit components to __all__ if available
+if _STREAMLIT_AVAILABLE:
+    __all__.extend([
+        'get_read_stats_pages',
+        'ReadProcessingPage',
+        'MappingStatisticsPage'
+    ])
+
+# Unified interface for backward compatibility
 class ReadStatsAnalyzer:
     """
     Unified analyzer that combines read processing and mapping statistics.
@@ -162,6 +185,3 @@ class ReadStatsAnalyzer:
             json.dump(unified_summary, f, indent=2, default=str)
 
         logging.getLogger(__name__).info("Unified read statistics analysis results exported to %s", output_path)
-
-# For backward compatibility, expose the main analyzer at module level
-__all__ = ['ReadStatsAnalyzer']

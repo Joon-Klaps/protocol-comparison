@@ -1,13 +1,14 @@
 """
-Coverage analysis module for viral genomics data.
+Coverage analysis module.
 
-This module provides a unified interface using the new hierarchical modular structure.
-For backward compatibility, it imports from the coverage package.
+This module handles coverage-related analysis:
+- Coverage depth statistics
+- Coverage visualizations
+- Segment-specific coverage analysis
 """
 
-# Import from the new modular structure
-from .coverage.summary_stats import CoverageSummaryStats, CoverageDataManager
-from .coverage.visualizations import CoverageVisualizations
+from .summary_stats import CoverageSummaryStats, CoverageDataManager
+from .visualizations import CoverageVisualizations
 
 # Main unified analyzer
 class CoverageAnalyzer:
@@ -115,5 +116,4 @@ class CoverageAnalyzer:
         logging.getLogger(__name__).info("Coverage analysis results exported to %s", output_path)
 
 
-# For backward compatibility, expose the main analyzer at module level
-__all__ = ['CoverageAnalyzer', 'CoverageDataManager']
+__all__ = ['CoverageSummaryStats', 'CoverageVisualizations', 'CoverageAnalyzer', 'CoverageDataManager']
