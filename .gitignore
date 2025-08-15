@@ -1,0 +1,12 @@
+.DS_Store
+data/viralmetagenome/**
+single-sequence/
+!*.xlsx
+~$*.xlsx
+tmp
+*_files/
+.nextflow*
+**/work
+sample_data/
+data/dash-app/
+__pycache__
