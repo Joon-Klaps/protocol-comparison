@@ -20,7 +20,7 @@ class MappingDataManager(DataManager):
 
     def __init__(self, data_path: Path):
         super().__init__(data_path)
-        self.mapping_dir = self.data_path / "mapping"
+        self.mapping_dir = self.data_path
 
     def load_data(self) -> Dict[str, pd.DataFrame]:
         """

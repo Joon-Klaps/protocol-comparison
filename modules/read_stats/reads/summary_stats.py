@@ -20,7 +20,7 @@ class ReadProcessingDataManager(DataManager):
 
     def __init__(self, data_path: Path):
         super().__init__(data_path)
-        self.stats_dir = self.data_path / "reads"
+        self.stats_dir = self.data_path
 
     def load_data(self) -> Dict[str, pd.DataFrame]:
         """

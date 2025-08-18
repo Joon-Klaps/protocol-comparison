@@ -9,10 +9,10 @@ import sys
 import os
 import argparse
 from pathlib import Path
-from typing import Dict, Callable
+from typing import Dict, Union, List
 
 
-def load_excel(file_path: Path, sheet_name: str) -> pd.DataFrame:
+def load_excel(file_path: Path, sheet_name: str, **kwargs) -> pd.DataFrame:
     """
     Load the main Excel file containing sample information.
 
@@ -24,10 +24,10 @@ def load_excel(file_path: Path, sheet_name: str) -> pd.DataFrame:
         DataFrame with sample information.
     """
     try:
-        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        df = pd.read_excel(file_path, sheet_name=sheet_name, **kwargs)
         return df
-    except KeyError:
-        logging.error("Sheet '%s' not found in %s", sheet_name, file_path)
+    except (KeyError, FileNotFoundError, ValueError) as e:
+        logging.error("Error loading sheet '%s' from %s: %s", sheet_name, file_path, e)
         sys.exit(1)
 
 
@@ -90,7 +90,27 @@ def extract_reads(file_path: Path) -> pd.DataFrame:
     read_stats = df[columns_of_interest]
     return pd.DataFrame(read_stats)
 
-def find_locations(directory: Path) -> Dict[str, Path]:
+def extract_comparison(file_path: Path) -> pd.DataFrame:
+    """
+    Extract comparison excel data.
+
+    Args:
+        file_path: Path to the Excel file.
+
+    Returns:
+        DataFrame with comparison information.
+    """
+    df = load_excel(file_path, "Sheet1", )
+
+    # Replace "NA" to NaN, "Yes" to True & "No" to False
+    df = df.replace("NA", pd.NA)
+    df = df.replace("Yes", True)
+    df = df.replace("No", False)
+
+    return pd.DataFrame(df)
+
+
+def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path]]]:
     """
     Find all relevant files in the given directory.
 
@@ -102,9 +122,21 @@ def find_locations(directory: Path) -> Dict[str, Path]:
     """
     locations = {}
 
-    main_excel_path = directory / "RUN1-6.rbind.xlsx"
+    main_excel_path = directory/ "viralmetagenome" / "RUN1-6.rbind.xlsx"
     if main_excel_path.exists():
+        logging.info("Found main Excel file: %s", main_excel_path)
         locations["mainexcel"] = main_excel_path
+    else:
+        logging.warning("Main Excel file not found in %s", directory)
+
+    comparison_excels = directory / "comparison-excels" / "raw"
+    if comparison_excels.exists() and comparison_excels.is_dir():
+        logging.info("Found comparison Excel files: %s", comparison_excels.glob("*.xlsx"))
+        locations["comparison_excels"] = [
+            f for f in comparison_excels.glob("*.xlsx") if not f.name.startswith("~")
+        ]
+    else:
+        logging.warning("No comparison Excel files found in %s", comparison_excels)
 
     return locations
 
@@ -118,15 +150,23 @@ def write_dfs(output_dfs: Dict[str, pd.DataFrame], output_dir: Path) -> None:
         output_dir: Path to the output directory.
     """
     for name, df in output_dfs.items():
-        if df.empty:
-            logging.warning("DataFrame for '%s' is empty, skipping", name)
-            continue
+        output_dir.mkdir(parents=True, exist_ok=True)
+        if isinstance(df, pd.Series) or isinstance(df, pd.DataFrame):
 
-        output_dir_name = output_dir / name
-        output_dir_name.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir_name / f"{name}.tsv"
-        df.to_csv(output_path, sep='\t', index=False)
-        logging.info("Data for '%s' saved to %s", name, output_path)
+            if df.empty:
+                logging.warning("DataFrame for '%s' is empty, skipping", name)
+                continue
+
+            output_path = output_dir / f"{name}.tsv"
+            df.to_csv(output_path, sep='\t', index=False)
+            logging.info("Data for '%s' saved to %s", name, output_path)
+
+        elif isinstance(df, Dict):
+            output_dir_name = output_dir / name
+            write_dfs(df, output_dir_name)
+
+        else:
+            logging.warning("DataFrame for '%s' is of unsupported type, skipping", name)
 
 
 def main(args: argparse.Namespace) -> int:
@@ -147,9 +187,15 @@ def main(args: argparse.Namespace) -> int:
         logging.error("No relevant files found in %s", args.input_dir)
         return 1
 
-    if locations["mainexcel"]:
+    if locations.get("mainexcel"):
         output_dfs["mapping"] = extract_mapping(Path(locations["mainexcel"]))
         output_dfs["reads"] = extract_reads(Path(locations["mainexcel"]))
+
+    if locations.get("comparison_excels"):
+        output_dfs["comparison_excels"] = {
+            comp_excel.stem.replace("SeqID_analysis-outline_to-do_", ""): extract_comparison(Path(comp_excel))
+            for comp_excel in locations["comparison_excels"]
+        }
 
     if output_dfs:
         write_dfs(output_dfs, Path(args.output_dir))
@@ -166,8 +212,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input-dir",
         type=str,
-        default="/Users/joonklaps/Desktop/School/PhD/projects/LVE-BE002-PIPELINE/LVE-BE02-Supplmentary/results/HPC-results/TMP-RUN001-004/inrahost-analysis/data/viralmetagenome",
-        help="Input directory containing nf-core/viralmetagenome output files"
+        default="/Users/joonklaps/Desktop/School/PhD/projects/LVE-BE002-PIPELINE/LVE-BE02-Supplmentary/results/HPC-results/TMP-RUN001-004/inrahost-analysis/data/",
+        help="Input directory containing nf-core/viralmetagenome output files, & other optional supporting files"
     )
     parser.add_argument(
         "--output-dir",
