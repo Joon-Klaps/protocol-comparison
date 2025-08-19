@@ -32,9 +32,9 @@ class ReadProcessingDataManager(DataManager):
         data = {}
 
         # Load read count summaries
-        read_counts = self.stats_dir / "reads.tsv"
+        read_counts = self.stats_dir / "reads.parquet"
         if read_counts.exists():
-            reads_df = pd.read_csv(read_counts, sep='\t')
+            reads_df = pd.read_parquet(read_counts)
             # Rename columns for easier handling
             reads_df = reads_df.rename(columns={
                 'FastQC (Raw). Seqs (R1,R2)': 'raw_reads',

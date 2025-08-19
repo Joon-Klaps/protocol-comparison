@@ -4,7 +4,7 @@ Main module page manager for viral genomics protocol comparison.
 This module provides functionality to collect and organize all Streamlit page
 components from different analysis modules into a unified dashboard structure.
 """
-
+import streamlit as st
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 import logging
@@ -237,13 +237,6 @@ def create_main_streamlit_app(data_path: Optional[str] = None):
     Args:
         data_path: Optional path to data directory
     """
-    try:
-        import streamlit as st
-        from streamlit_option_menu import option_menu
-    except ImportError:
-        logger.error("Streamlit or streamlit-option-menu not available")
-        return
-
     # Initialize page manager
     page_manager = get_global_page_manager(data_path)
 

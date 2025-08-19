@@ -254,6 +254,14 @@
     }
 }
 
+.updatemenu-item-rect {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    padding: 0.5rem 1rem !important;
+    background: #f8fafc !important;
+    transition: all 0.2s ease !important;
+}
+
 /* =============================================================================
    GENERAL CLEANUP
    ============================================================================= */

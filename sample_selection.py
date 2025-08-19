@@ -8,6 +8,7 @@ This module handles:
 - Providing sample selection UI components for Streamlit
 """
 
+import pandas as pd
 import streamlit as st
 import logging
 from pathlib import Path
@@ -30,6 +31,46 @@ class PreconfiguredSelections:
         self.comparison_excels_path = self.data_path / "comparison_excels"
         self.selections = {}
 
+    def _process_parquet_file(self, parquet_file: Path):
+        df = pd.read_parquet(parquet_file)
+
+        if df.empty:
+            return
+
+        required_columns = ['Condition_group-to-check', 'LVE_codes-to-compare', 'Comment_additional-information']
+        if not all(col in df.columns for col in required_columns):
+            logger.warning("Required columns not found in %s", parquet_file.name)
+            return
+
+        file_prefix = parquet_file.stem.replace('LVE_CAP_', '').replace('_V01', '')
+
+        # Use pandas vectorized operations instead of iterating over rows
+        df = df.rename(columns={
+            'Condition_group-to-check': 'condition',
+            'LVE_codes-to-compare': 'codes_raw',
+            'Comment_additional-information': 'comment'
+        })
+
+        df['codes_list'] = df['codes_raw'].apply(lambda x: [c.strip() for c in str(x).split(',') if c.strip()])
+        df['source_file'] = parquet_file.name
+        df['file_prefix'] = file_prefix
+
+        # Filter out rows with empty conditions or codes
+        filtered_df = df[df['condition'].notna() & (df['codes_list'].str.len() > 0)]
+
+        if file_prefix not in self.selections:
+            self.selections[file_prefix] = {}
+
+        for index, row in filtered_df.iterrows():
+            selection_key = row['condition']
+            self.selections[file_prefix][selection_key] = {
+                'condition': row['condition'],
+                'lve_codes': row['codes_list'],
+                'comment': row['comment'],
+                'source_file': row['source_file'],
+                'file_prefix': row['file_prefix']
+            }
+
     def load_preconfigured_selections(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
         """
         Load preconfigured selections from TSV files.
@@ -43,78 +84,17 @@ class PreconfiguredSelections:
             logger.warning("Comparison excels path does not exist: %s", self.comparison_excels_path)
             return self.selections
 
-        # Find all TSV files
-        tsv_files = list(self.comparison_excels_path.glob("*.tsv"))
+        parquet_files = list(self.comparison_excels_path.glob("*.parquet"))
+        if not parquet_files:
+            logger.info("No Parquet files found in %s", self.comparison_excels_path)
+            return self.selections
 
-        for tsv_file in tsv_files:
+        for parquet_file in parquet_files:
             try:
-                # Read TSV file
-                with open(tsv_file, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-
-                if not lines:
-                    continue
-
-                # Parse header
-                header = lines[0].strip().split('\t')
-
-                # Find required columns
-                try:
-                    condition_idx = header.index('Condition_group-to-check')
-                    codes_idx = header.index('LVE_codes-to-compare')
-                    comment_idx = header.index('Comment_additional-information')
-                except ValueError as e:
-                    logger.warning("Required columns not found in %s: %s", tsv_file.name, e)
-                    continue
-
-                # Get file prefix
-                file_prefix = tsv_file.stem.replace('LVE_CAP_', '').replace('_V01', '')
-
-                # Initialize file prefix in selections if not exists
-                if file_prefix not in self.selections:
-                    self.selections[file_prefix] = {}
-
-                # Parse data rows
-                for i, line in enumerate(lines[1:], 1):
-                    if not line.strip():
-                        continue
-
-                    row = line.strip().split('\t')
-                    if len(row) <= max(condition_idx, codes_idx, comment_idx):
-                        continue
-
-                    condition = row[condition_idx].strip()
-                    codes_raw = row[codes_idx].strip()
-                    comment = row[comment_idx].strip() if comment_idx < len(row) else ""
-
-                    # Skip empty conditions or codes
-                    if not condition or not codes_raw:
-                        continue
-
-                    # Parse LVE codes - handle both comma and comma+space separators
-                    lve_codes = []
-                    if codes_raw:
-                        # Split by comma and clean up whitespace
-                        codes = [code.strip() for code in codes_raw.split(',')]
-                        lve_codes = [code for code in codes if code]
-
-                    if lve_codes:
-                        # Use condition as the selection key
-                        selection_key = condition
-
-                        self.selections[file_prefix][selection_key] = {
-                            'condition': condition,
-                            'lve_codes': lve_codes,
-                            'comment': comment,
-                            'source_file': tsv_file.name,
-                            'file_prefix': file_prefix
-                        }
-
+                self._process_parquet_file(parquet_file)
             except Exception as e:
-                logger.warning("Error reading TSV file %s: %s", tsv_file.name, e)
+                logger.warning(f"Error processing file {parquet_file.name}: {e}")
 
-        total_selections = sum(len(file_selections) for file_selections in self.selections.values())
-        logger.info("Loaded %d preconfigured selections across %d files", total_selections, len(self.selections))
         return self.selections
 
     def get_available_file_prefixes(self) -> List[str]:

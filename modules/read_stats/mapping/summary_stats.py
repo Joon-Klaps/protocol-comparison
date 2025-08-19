@@ -32,9 +32,9 @@ class MappingDataManager(DataManager):
         data = {}
 
         # Load mapping statistics
-        mapping_stats = self.mapping_dir / "mapping.tsv"
+        mapping_stats = self.mapping_dir / "mapping.parquet"
         if mapping_stats.exists():
-            mapping_df = pd.read_csv(mapping_stats, sep='\t')
+            mapping_df = pd.read_parquet(mapping_stats)
             # Rename columns for easier handling
             mapping_df = mapping_df.rename(columns={
                 '(samtools Raw) reads mapped (R1+R2)': 'reads_mapped',
@@ -114,12 +114,12 @@ class MappingSummaryStats:
             max_idx = group['reads_mapped'].idxmax()
 
             reads_mapped_stats = {
-                'mean_mapping_reads': math.floor(group['reads_mapped'].mean()),
-                'mean_umi_mapping_reads': math.floor(group['umi_mapping_reads'].mean()),
-                'mean_PCR_cycles': math.floor(group['estimated_PCR_cycles'].mean()),
-                'min_mapping_reads': group['reads_mapped'].min(),
+                'mean_mapping_reads': math.floor(group['reads_mapped'].mean(skipna=True)),
+                'mean_umi_mapping_reads': math.floor(group['umi_mapping_reads'].mean(skipna=True)),
+                'mean_PCR_cycles': math.floor(group['estimated_PCR_cycles'].mean(skipna=True)),
+                'min_mapping_reads': group['reads_mapped'].min(skipna=True),
                 'min_mapping_reads_sample': group.loc[min_idx, 'sample'],
-                'max_mapping_reads': group['reads_mapped'].max(),
+                'max_mapping_reads': group['reads_mapped'].max(skipna=True),
                 'max_mapping_reads_sample': group.loc[max_idx, 'sample'],
                 'sample_count': len(group)
             }

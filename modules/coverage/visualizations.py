@@ -5,14 +5,18 @@ This module creates visualizations for coverage depth analysis and genome recove
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import logging
 
-from .summary_stats import CoverageSummaryStats
+if TYPE_CHECKING:
+    from .data import CoverageDataManager
+    from .summary_stats import CoverageSummaryStats
+else:
+    from .summary_stats import CoverageSummaryStats
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +32,27 @@ class CoverageVisualizations:
     - Segment-specific coverage plots
     """
 
-    def __init__(self, data_path: Path):
+    def __init__(self, data_path: Path, data_manager: Optional['CoverageDataManager'] = None):
         """
         Initialize coverage visualizations.
 
         Args:
             data_path: Path to data directory
+            data_manager: Optional shared data manager instance to avoid duplicate loading
         """
-        self.stats = CoverageSummaryStats(data_path)
+        if data_manager is not None:
+            self.stats = CoverageSummaryStats(data_path, data_manager=data_manager)
+            self.data_manager = data_manager
+        else:
+            self.stats = CoverageSummaryStats(data_path)
+            self.data_manager = self.stats.data_manager
+
+        self.depth_threshold = 10  # Default minimum depth for visualizations
+
+    def set_depth_threshold(self, threshold: int) -> None:
+        """Set the minimum depth threshold for visualizations."""
+        self.depth_threshold = threshold
+        self.stats.set_depth_threshold(threshold)
 
     def create_coverage_overlay_plot(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
         """
@@ -48,7 +65,7 @@ class CoverageVisualizations:
             Plotly figure with coverage overlay
         """
         if not sample_ids:
-            sample_ids = self.stats.data_manager.get_available_samples()
+            sample_ids = self.data_manager.get_available_samples()
 
         fig = make_subplots(
             rows=1, cols=1,
@@ -58,24 +75,23 @@ class CoverageVisualizations:
         colors = px.colors.qualitative.Set1
 
         for i, sample_id in enumerate(sample_ids[:10]):  # Limit to 10 samples for readability
-            coverage_df = self.stats.get_sample_coverage(sample_id)
+            sample_data = self.data_manager.get_sample_data(sample_id)
 
-            if not coverage_df.empty:
+            if sample_data:
                 color = colors[i % len(colors)]
 
-                for contig in coverage_df['contig'].unique():
-                    contig_data = coverage_df[coverage_df['contig'] == contig]
-
-                    fig.add_trace(
-                        go.Scatter(
-                            x=contig_data['position'],
-                            y=contig_data['depth'],
-                            mode='lines',
-                            name=f'{sample_id}_{contig}',
-                            line=dict(color=color),
-                            opacity=0.7
+                for reference, coverage_df in sample_data.items():
+                    if 'depth' in coverage_df.columns and 'position' in coverage_df.columns:
+                        fig.add_trace(
+                            go.Scatter(
+                                x=coverage_df['position'],
+                                y=coverage_df['depth'],
+                                mode='lines',
+                                name=f'{sample_id}_{reference}',
+                                line=dict(color=color),
+                                opacity=0.7
+                            )
                         )
-                    )
 
         fig.update_layout(
             title='Coverage Overlay Plot',
@@ -87,69 +103,115 @@ class CoverageVisualizations:
 
         return fig
 
-    def create_coverage_stats_plot(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
+    def create_recovery_stats_plot(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
         """
-        Create coverage statistics bar plot.
+        Create recovery statistics bar plot.
 
         Args:
             sample_ids: Optional list of sample IDs to visualize
 
         Returns:
-            Plotly figure with coverage statistics
+            Plotly figure with recovery statistics
         """
-        coverage_stats = self.stats.calculate_coverage_stats(sample_ids)
+        # Set depth threshold for analysis
+        self.stats.set_depth_threshold(self.depth_threshold)
 
-        if coverage_stats.empty:
+        # Get recovery data from data manager
+        recovery_data = self.data_manager.get_recovery_data(sample_ids, self.depth_threshold)
+
+        if not recovery_data:
             fig = go.Figure()
             fig.add_annotation(
-                text="No coverage data available",
+                text="No recovery data available",
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False
             )
             return fig
 
+        # Convert to DataFrame for plotting
+        plot_data = []
+        for sample_id, ref_data in recovery_data.items():
+            for reference, recovery_value in ref_data.items():
+                plot_data.append({
+                    'sample_id': sample_id,
+                    'reference': reference,
+                    'recovery_percentage': recovery_value * 100
+                })
+
+        if not plot_data:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No valid recovery data for plotting",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return fig
+
+        recovery_df = pd.DataFrame(plot_data)
+
         fig = px.bar(
-            coverage_stats,
+            recovery_df,
             x='sample_id',
-            y='coverage_percentage',
-            color='contig',
-            title='Coverage Percentage by Sample and Segment',
-            labels={'coverage_percentage': 'Coverage (%)', 'sample_id': 'Sample ID'}
+            y='recovery_percentage',
+            color='reference',
+            barmode='group',  # This creates dodged/grouped bars instead of stacked
+            title=f'Genome Recovery Percentage by Sample and Reference (min depth: {self.depth_threshold}x)',
+            labels={'recovery_percentage': 'Recovery (%)', 'sample_id': 'Sample ID'}
         )
         fig.update_layout(
             xaxis_tickangle=-45,
-            height=500
+            height=500,
+            bargap=0.1,  # Gap between groups of bars
+            bargroupgap=0.05  # Gap between bars within a group
         )
 
         return fig
 
-    def create_depth_distribution_plot(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
+    def create_depth_profile(self, sample_id: str, reference: Optional[str] = None) -> go.Figure:
         """
-        Create depth distribution histogram.
+        Create depth profile for a specific sample.
 
         Args:
-            sample_ids: Optional list of sample IDs to visualize
+            sample_id: Sample identifier
+            reference: Optional specific reference to plot
 
         Returns:
-            Plotly figure with depth distribution
+            Plotly figure with depth profile
         """
-        coverage_stats = self.stats.calculate_coverage_stats(sample_ids)
+        sample_data = self.data_manager.get_sample_data(sample_id, reference)
 
-        if coverage_stats.empty:
+        if not sample_data:
             fig = go.Figure()
             fig.add_annotation(
-                text="No coverage data available",
+                text=f"No depth data available for sample {sample_id}",
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False
             )
             return fig
 
-        fig = px.histogram(
-            coverage_stats,
-            x='mean_depth',
-            nbins=30,
-            title='Distribution of Mean Depth Across Samples',
-            labels={'mean_depth': 'Mean Depth', 'count': 'Frequency'}
+        fig = make_subplots(
+            rows=len(sample_data), cols=1,
+            subplot_titles=[f'{sample_id} - {ref}' for ref in sample_data.keys()],
+            shared_xaxes=True
+        )
+
+        for i, (ref, df) in enumerate(sample_data.items()):
+            if 'depth' in df.columns and 'position' in df.columns:
+                fig.add_trace(
+                    go.Scatter(
+                        x=df['position'],
+                        y=df['depth'],
+                        mode='lines',
+                        name=f'{ref}',
+                        line=dict(width=2)
+                    ),
+                    row=i+1, col=1
+                )
+
+        fig.update_layout(
+            title=f'Depth Profile - {sample_id}',
+            height=300 * len(sample_data),
+            showlegend=True
         )
 
         return fig
@@ -166,14 +228,17 @@ class CoverageVisualizations:
             Plotly figure for the segment
         """
         if not sample_ids:
-            sample_ids = self.stats.data_manager.get_available_samples()
+            sample_ids = self.data_manager.get_available_samples()
 
         # Filter samples that have data for this segment
         valid_samples = []
         for sample_id in sample_ids:
-            coverage_df = self.stats.get_sample_coverage(sample_id, segment)
-            if not coverage_df.empty:
-                valid_samples.append(sample_id)
+            sample_data = self.data_manager.get_sample_data(sample_id)
+            # Look for references containing the segment
+            for reference in sample_data.keys():
+                if segment.upper() in reference.upper():
+                    valid_samples.append(sample_id)
+                    break
 
         if not valid_samples:
             fig = go.Figure()
@@ -192,18 +257,22 @@ class CoverageVisualizations:
         )
 
         for i, sample_id in enumerate(valid_samples):
-            coverage_df = self.stats.get_sample_coverage(sample_id, segment)
+            sample_data = self.data_manager.get_sample_data(sample_id)
 
-            fig.add_trace(
-                go.Scatter(
-                    x=coverage_df['position'],
-                    y=coverage_df['depth'],
-                    mode='lines',
-                    name=f'{sample_id}',
-                    line=dict(width=2)
-                ),
-                row=i+1, col=1
-            )
+            # Find the reference for this segment
+            for reference, df in sample_data.items():
+                if segment.upper() in reference.upper() and 'depth' in df.columns and 'position' in df.columns:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=df['position'],
+                            y=df['depth'],
+                            mode='lines',
+                            name=f'{sample_id}',
+                            line=dict(width=2)
+                        ),
+                        row=i+1, col=1
+                    )
+                    break
 
         fig.update_layout(
             title=f'Coverage Plots - {segment} Segment',
@@ -215,7 +284,7 @@ class CoverageVisualizations:
 
     def create_coverage_heatmap(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
         """
-        Create coverage percentage heatmap.
+        Create coverage recovery percentage heatmap.
 
         Args:
             sample_ids: Optional list of sample IDs to visualize
@@ -223,28 +292,50 @@ class CoverageVisualizations:
         Returns:
             Plotly figure with coverage heatmap
         """
-        coverage_stats = self.stats.calculate_coverage_stats(sample_ids)
+        # Get recovery data
+        recovery_data = self.data_manager.get_recovery_data(sample_ids, self.depth_threshold)
 
-        if coverage_stats.empty:
+        if not recovery_data:
             fig = go.Figure()
             fig.add_annotation(
-                text="No coverage data available",
+                text="No recovery data available",
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False
             )
             return fig
 
+        # Convert to DataFrame and pivot for heatmap
+        plot_data = []
+        for sample_id, ref_data in recovery_data.items():
+            for reference, recovery_value in ref_data.items():
+                plot_data.append({
+                    'sample_id': sample_id,
+                    'reference': reference,
+                    'recovery_percentage': recovery_value * 100
+                })
+
+        if not plot_data:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No valid recovery data for heatmap",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return fig
+
+        recovery_df = pd.DataFrame(plot_data)
+
         # Pivot to create matrix format
-        heatmap_data = coverage_stats.pivot(
+        heatmap_data = recovery_df.pivot(
             index='sample_id',
-            columns='contig',
-            values='coverage_percentage'
+            columns='reference',
+            values='recovery_percentage'
         )
 
         fig = px.imshow(
             heatmap_data,
-            title='Coverage Percentage Heatmap',
-            labels=dict(x='Segment', y='Sample', color='Coverage (%)'),
+            title=f'Genome Recovery Percentage Heatmap (min depth: {self.depth_threshold}x)',
+            labels=dict(x='Reference', y='Sample', color='Recovery (%)'),
             color_continuous_scale='viridis'
         )
         fig.update_layout(height=600)
@@ -264,29 +355,36 @@ class CoverageVisualizations:
         figures = {}
 
         # Coverage overlay plot
-        fig_overlay = self.create_coverage_overlay_plot(sample_ids)
-        if fig_overlay.data:  # Only add if figure has data
-            figures['coverage_overlay'] = fig_overlay
+        try:
+            fig_overlay = self.create_coverage_overlay_plot(sample_ids)
+            if fig_overlay.data:  # Only add if figure has data
+                figures['Coverage Overlay Plot'] = fig_overlay
+        except Exception as e:
+            logger.warning("Failed to create coverage overlay plot: %s", e)
 
-        # Coverage statistics bar plot
-        fig_stats = self.create_coverage_stats_plot(sample_ids)
-        if fig_stats.data:
-            figures['coverage_stats'] = fig_stats
-
-        # Depth distribution
-        fig_depth_dist = self.create_depth_distribution_plot(sample_ids)
-        if fig_depth_dist.data:
-            figures['depth_distribution'] = fig_depth_dist
+        # Recovery statistics bar plot
+        try:
+            fig_recovery = self.create_recovery_stats_plot(sample_ids)
+            if fig_recovery.data:
+                figures['Genome Recovery Statistics'] = fig_recovery
+        except Exception as e:
+            logger.warning("Failed to create recovery stats plot: %s", e)
 
         # Coverage heatmap
-        fig_heatmap = self.create_coverage_heatmap(sample_ids)
-        if fig_heatmap.data:
-            figures['coverage_heatmap'] = fig_heatmap
+        try:
+            fig_heatmap = self.create_coverage_heatmap(sample_ids)
+            if fig_heatmap.data:
+                figures['Recovery Heatmap'] = fig_heatmap
+        except Exception as e:
+            logger.warning("Failed to create coverage heatmap: %s", e)
 
         # Segment-specific plots (try common segments)
         for segment in ['L', 'S']:
-            fig_segment = self.create_segment_specific_plots(segment, sample_ids)
-            if fig_segment.data:
-                figures[f'{segment.lower()}_segment_coverage'] = fig_segment
+            try:
+                fig_segment = self.create_segment_specific_plots(segment, sample_ids)
+                if fig_segment.data:
+                    figures[f'{segment} Segment Coverage'] = fig_segment
+            except Exception as e:
+                logger.warning("Failed to create %s segment plot: %s", segment, e)
 
         return figures

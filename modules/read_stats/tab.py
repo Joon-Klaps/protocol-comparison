@@ -247,7 +247,7 @@ def get_tab_info() -> Dict[str, Any]:
     """
     return {
         'name': 'read_stats',
-        'title': 'Read Statistics',
+        'title': 'Read Analysis',
         'icon': '📖',
         'description': 'Analysis of read processing pipeline and mapping statistics',
         'order': 10,

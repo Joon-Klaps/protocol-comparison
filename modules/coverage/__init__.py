@@ -7,7 +7,8 @@ This module handles coverage-related analysis:
 - Segment-specific coverage analysis
 """
 
-from .summary_stats import CoverageSummaryStats, CoverageDataManager
+from .data import CoverageDataManager
+from .summary_stats import CoverageSummaryStats
 from .visualizations import CoverageVisualizations
 
 # Main unified analyzer

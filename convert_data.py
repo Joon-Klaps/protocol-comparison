@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 """
-A script to convert output files from nf-core/viralmetagenome to the formats needed for this analysis platform.
+A script to convert output files from nf-core/viralmetagenome to Parquet format for optimized analysis platform performance.
 """
 
 import pandas as pd
@@ -8,9 +8,10 @@ import logging
 import sys
 import os
 import argparse
+import re
 from pathlib import Path
 from typing import Dict, Union, List
-
+from tqdm import tqdm
 
 def load_excel(file_path: Path, sheet_name: str, **kwargs) -> pd.DataFrame:
     """
@@ -63,6 +64,7 @@ def extract_mapping(file_path: Path) -> pd.DataFrame:
             sys.exit(1)
 
     mapping_stats = df[columns_of_interest].copy()
+    mapping_stats["(umitools) deduplicated reads (R1,R2)"] = mapping_stats["(umitools) deduplicated reads (R1,R2)"] * 2
 
     # Calculate estimated PCR cycles: Total UMIs ÷ Unique UMIs
     # This represents the average number of copies of each read (amplification level)
@@ -98,6 +100,10 @@ def extract_reads(file_path: Path) -> pd.DataFrame:
             logging.error("Column '%s' not found in the main DataFrame", column)
             sys.exit(1)
 
+    df["FastQC (Raw). Seqs (R1,R2)"] = df["FastQC (Raw). Seqs (R1,R2)"] *2
+    df["FastQC (Post-trimming). Seqs (R1,R2)"] = df["FastQC (Post-trimming). Seqs (R1,R2)"] *2
+    df["FastQC (post-Host-removal). Seqs (R1,R2)"] = df["FastQC (post-Host-removal). Seqs (R1,R2)"] *2
+
     read_stats = df[columns_of_interest]
     return pd.DataFrame(read_stats)
 
@@ -121,6 +127,55 @@ def extract_comparison(file_path: Path) -> pd.DataFrame:
     return pd.DataFrame(df)
 
 
+def extract_custom_vcf_key(filename: str) -> str:
+    """
+    Extract the key from custom VCF filename using regex pattern.
+
+    Args:
+        filename: The VCF filename to extract key from.
+
+    Returns:
+        Extracted key or original filename if pattern not found.
+
+    Example:
+        'merged-reads_20250505_0.1.3dev_agitated_feynman-LVE0001_NGA-2018-IRR-120-MK117940.1-CONSTRAINT_constraint.vcf.tsv'
+        -> 'LVE0001_NGA-2018-IRR-120-MK117940.1'
+    """
+    # Pattern to match: (LVE\d+_[A-Z0-9\-_\.]+)-CONSTRAINT_constraint.vcf.tsv
+    pattern = r'(LVE0\d+_[A-z0-9\-_\.]+)-CONSTRAINT_constraint\.vcf\.tsv'
+    match = re.search(pattern, filename)
+
+    if match:
+        return match.group(1)
+    else:
+        logging.warning("Could not extract key from filename: %s", filename)
+        # Fallback to original behavior
+        return filename.replace("_constraint.vcf.tsv", "")
+
+
+def extract_custom_vcf(file_path: Path) -> pd.DataFrame:
+    """
+    Extract custom VCF data from TSV file.
+
+    Args:
+        file_path: Path to the custom VCF TSV file.
+
+    Returns:
+        DataFrame with custom VCF data.
+    """
+    df = pd.read_csv(file_path, sep='\t')
+    df["depth"] = df["A"] + df["C"] + df["G"] + df["T"]
+
+    # Use vectorized division
+    df['freqA'] = df['A'] / df['depth']
+    df['freqC'] = df['C'] / df['depth']
+    df['freqG'] = df['G'] / df['depth']
+    df['freqT'] = df['T'] / df['depth']
+
+    # Handle division by zero
+    df = df.fillna(0)
+    return df
+
 def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path]]]:
     """
     Find all relevant files in the given directory.
@@ -132,6 +187,7 @@ def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path]]]:
         Dictionary mapping file types to their Paths.
     """
     locations = {}
+    viralmetagenome = directory / "viralmetagenome"
 
     main_excel_path = directory/ "viralmetagenome" / "RUN1-6.rbind.xlsx"
     if main_excel_path.exists():
@@ -149,18 +205,26 @@ def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path]]]:
     else:
         logging.warning("No comparison Excel files found in %s", comparison_excels)
 
+    custom_vcfs = [f for f in viralmetagenome.rglob("*/custom-vcf/*/*_constraint.vcf.tsv") if "seqruns-collapsed" not in str(f)]
+    if custom_vcfs:
+        logging.info("Found custom VCF file: %s", custom_vcfs[0])
+        locations["custom_vcfs"] = custom_vcfs
+    else:
+        logging.warning("No custom VCF files found in %s", viralmetagenome)
+
+
     return locations
 
 
 def write_dfs(output_dfs: Dict[str, pd.DataFrame], output_dir: Path) -> None:
     """
-    Write DataFrames to TSV files in the specified output directory.
+    Write DataFrames to Parquet files in the specified output directory.
 
     Args:
         output_dfs: Dictionary mapping output names to DataFrames.
         output_dir: Path to the output directory.
     """
-    for name, df in output_dfs.items():
+    for name, df in tqdm(output_dfs.items(), desc="Writing DataFrames"):
         output_dir.mkdir(parents=True, exist_ok=True)
         if isinstance(df, pd.Series) or isinstance(df, pd.DataFrame):
 
@@ -168,9 +232,9 @@ def write_dfs(output_dfs: Dict[str, pd.DataFrame], output_dir: Path) -> None:
                 logging.warning("DataFrame for '%s' is empty, skipping", name)
                 continue
 
-            output_path = output_dir / f"{name}.tsv"
-            df.to_csv(output_path, sep='\t', index=False)
-            logging.info("Data for '%s' saved to %s", name, output_path)
+            output_path = output_dir / f"{name}.parquet"
+            df.to_parquet(output_path, engine='pyarrow', compression='snappy', index=False)
+            logging.debug("Data for '%s' saved to %s", name, output_path)
 
         elif isinstance(df, Dict):
             output_dir_name = output_dir / name
@@ -210,6 +274,13 @@ def main(cli_args: argparse.Namespace) -> int:
             output_dfs["comparison_excels"] = {
                 comp_excel.stem.replace("SeqID_analysis-outline_to-do_", ""): extract_comparison(comp_excel)
                 for comp_excel in comparison_excels
+            }
+    if locations.get("custom_vcfs"):
+        custom_vcfs = locations["custom_vcfs"]
+        if isinstance(custom_vcfs, list):
+            output_dfs["custom_vcfs"] = {
+                extract_custom_vcf_key(custom_vcf.name): extract_custom_vcf(custom_vcf)
+                for custom_vcf in tqdm(custom_vcfs, desc="Extracting custom VCFs")
             }
 
     if output_dfs:

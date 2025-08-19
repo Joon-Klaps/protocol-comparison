@@ -163,8 +163,8 @@ class DataPathManager:
             return False, f"Path is not a directory: {data_path}"
 
         # Check for expected subdirectories
-        expected_subdirs = ['consensus', 'coverage', 'read_stats', 'mapping']
-        expected_files = ['mapping.tsv', 'reads.tsv']
+        expected_subdirs = ['consensus', 'custom_vcfs', 'read_stats', 'mapping']
+        expected_files = ['mapping.parquet', 'reads.parquet']
         found_data = [p.name for p in path.glob("*") if p.name in expected_files or p.name in expected_subdirs]
 
         if not found_data:
@@ -238,11 +238,93 @@ def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]
                         del st.session_state['cached_modules']
                     if 'selected_preconfigured' in st.session_state:
                         del st.session_state['selected_preconfigured']
+
+                    # Clear coverage data cache
+                    try:
+                        from modules.coverage.data import clear_coverage_cache
+                        clear_coverage_cache()
+                    except ImportError:
+                        pass  # Module might not be available
+
                 st.success("Data reloaded successfully!")
                 st.rerun()
         else:
             st.button("🔄 Reload Data", disabled=True, use_container_width=True)
             st.caption("Configure valid data path first")
+
+        # Analysis Controls Section
+        if data_path_valid:
+            st.markdown("---")
+            st.subheader("⚙️ Analysis Controls")
+            
+            # Show available modules as checkboxes for controls
+            available_module_names = []
+            if 'available_modules' in st.session_state:
+                available_module_names = [
+                    (name, info.get('title', name)) for name, info in st.session_state['available_modules']
+                ]
+            
+            if available_module_names:
+                # Coverage controls toggle
+                coverage_enabled = st.checkbox(
+                    "📊 Coverage Analysis Controls",
+                    value=st.session_state.get('show_coverage_controls', False),
+                    help="Show/hide coverage analysis parameter controls",
+                    key="show_coverage_controls"
+                )
+                
+                if coverage_enabled:
+                    # Coverage depth threshold controls
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        coverage_depth_threshold = st.slider(
+                            "Min Depth Threshold",
+                            min_value=1,
+                            max_value=500,
+                            value=st.session_state.get('coverage_depth_threshold', 10),
+                            step=1,
+                            help="Minimum depth required to consider a genomic position as 'recovered'",
+                            key="coverage_depth_slider"
+                        )
+                    
+                    with col2:
+                        coverage_depth_number = st.number_input(
+                            "Exact Value",
+                            min_value=1,
+                            max_value=500,
+                            value=st.session_state.get('coverage_depth_threshold', 10),
+                            step=1,
+                            help="Type exact depth threshold",
+                            key="coverage_depth_number"
+                        )
+                    
+                    # Store the selected threshold in session state
+                    # Use the most recently changed value
+                    if coverage_depth_threshold != st.session_state.get('coverage_depth_threshold', 10):
+                        st.session_state['coverage_depth_threshold'] = coverage_depth_threshold
+                    elif coverage_depth_number != st.session_state.get('coverage_depth_threshold', 10):
+                        st.session_state['coverage_depth_threshold'] = coverage_depth_number
+                    
+                    # Display current setting
+                    current_threshold = st.session_state.get('coverage_depth_threshold', 10)
+                    st.caption(f"🎯 Current depth threshold: **{current_threshold}x**")
+                
+                # Add checkboxes for other modules as needed
+                # read_stats_enabled = st.checkbox(
+                #     "📈 Read Statistics Controls",
+                #     value=False,
+                #     help="Show/hide read statistics parameter controls"
+                # )
+                # 
+                # consensus_enabled = st.checkbox(
+                #     "🧬 Consensus Analysis Controls", 
+                #     value=False,
+                #     help="Show/hide consensus analysis parameter controls"
+                # )
+            
+            else:
+                st.info("No analysis modules available")
 
         return data_path, data_path_valid, reload_requested, sample_selection_manager
 
@@ -527,8 +609,11 @@ def main():
         st.error("No analysis modules found. Please check your modules code directory.")
         return
 
-    # Get sample information from first available module
+    # Get ordered modules and store in session state for sidebar access
     ordered_modules = discovery.get_ordered_modules()
+    st.session_state['available_modules'] = ordered_modules
+
+    # Get sample information from first available module
     all_samples = []
 
     try:
