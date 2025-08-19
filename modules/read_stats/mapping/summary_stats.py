@@ -40,8 +40,13 @@ class MappingDataManager(DataManager):
                 '(samtools Raw) reads mapped (R1+R2)': 'reads_mapped',
                 '(samtools Raw) reads mapped %': 'reads_mapped_pct',
                 '(samtools Raw) reads unmapped (R1+R2)': 'reads_unmapped',
-                '(samtools Raw) reads unmapped %': 'reads_unmapped_pct'
+                '(samtools Raw) reads unmapped %': 'reads_unmapped_pct',
+                '(umitools) deduplicated reads (R1,R2)': 'umi_mapping_reads',
+                '(umitools) total UMIs': 'total_UMIs',
+                '(umitools) unique UMIs': 'unique_UMIs',
+                '(umitools) estimated PCR cycles': 'estimated_PCR_cycles'
             })
+            mapping_df["umi_mapping_reads"] = mapping_df["umi_mapping_reads"] * 2
             data['mapping'] = mapping_df
 
         return data
@@ -110,6 +115,8 @@ class MappingSummaryStats:
 
             reads_mapped_stats = {
                 'mean_mapping_reads': math.floor(group['reads_mapped'].mean()),
+                'mean_umi_mapping_reads': math.floor(group['umi_mapping_reads'].mean()),
+                'mean_PCR_cycles': math.floor(group['estimated_PCR_cycles'].mean()),
                 'min_mapping_reads': group['reads_mapped'].min(),
                 'min_mapping_reads_sample': group.loc[min_idx, 'sample'],
                 'max_mapping_reads': group['reads_mapped'].max(),

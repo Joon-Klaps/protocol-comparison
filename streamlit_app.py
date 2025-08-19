@@ -18,6 +18,9 @@ import time
 # Add the current directory to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Import our custom modules
+from sample_selection import SampleSelectionManager
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -125,9 +128,9 @@ class DataPathManager:
 
         # Check common locations
         possible_paths = [
+            "../../data/app",
             "sample_data",
             "data",
-            "../data",
             str(Path.cwd() / "sample_data"),
             str(Path.cwd() / "data")
         ]
@@ -161,20 +164,22 @@ class DataPathManager:
 
         # Check for expected subdirectories
         expected_subdirs = ['consensus', 'coverage', 'read_stats', 'mapping']
-        found_subdirs = [d.name for d in path.iterdir() if d.is_dir()]
+        expected_files = ['mapping.tsv', 'reads.tsv']
+        found_data = [p.name for p in path.glob("*") if p.name in expected_files or p.name in expected_subdirs]
 
-        if not any(subdir in found_subdirs for subdir in expected_subdirs):
+        if not found_data:
+            logger.warning("No expected data subdirectories found in %s", [p.name for p in path.glob("*")])
             return False, f"No expected data subdirectories found in {data_path}"
 
         return True, f"Valid data path: {data_path}"
 
 
-def render_sidebar() -> tuple[str, bool, bool]:
+def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]:
     """
     Render sidebar configuration.
 
     Returns:
-        Tuple of (data_path, data_path_valid, reload_requested)
+        Tuple of (data_path, data_path_valid, reload_requested, sample_selection_manager)
     """
     with st.sidebar:
         st.title("🔧 Configuration")
@@ -193,19 +198,31 @@ def render_sidebar() -> tuple[str, bool, bool]:
 
         # Validate data path
         data_path_valid = False
+        sample_selection_manager = None
+
         if data_path:
             is_valid, status_msg = DataPathManager.validate_data_path(data_path)
             if is_valid:
-                st.success(status_msg)
+                # st.success(status_msg)
                 data_path_valid = True
+
+                # Initialize sample selection manager
+                try:
+                    sample_selection_manager = SampleSelectionManager(data_path)
+                    sample_selection_manager.load_preconfigured_selections()
+
+                    # Show preconfigured selections info
+                    total_selections, num_datasets = sample_selection_manager.get_selection_info_for_sidebar()
+
+                    if total_selections == 0:
+                        st.warning("⚠️ No preconfigured selections found in comparison_excels directory")
+
+                except Exception as e:
+                    st.warning(f"Error loading preconfigured selections: {str(e)}")
             else:
                 st.error(status_msg)
         else:
             st.info("👆 Please enter a data directory path to get started")
-
-        # Reload data button
-        st.markdown("---")
-        st.subheader("🔄 Data Management")
 
         reload_requested = False
         if data_path_valid:
@@ -219,51 +236,15 @@ def render_sidebar() -> tuple[str, bool, bool]:
                         del st.session_state['cached_samples']
                     if 'cached_modules' in st.session_state:
                         del st.session_state['cached_modules']
+                    if 'selected_preconfigured' in st.session_state:
+                        del st.session_state['selected_preconfigured']
                 st.success("Data reloaded successfully!")
                 st.rerun()
         else:
             st.button("🔄 Reload Data", disabled=True, use_container_width=True)
             st.caption("Configure valid data path first")
 
-        return data_path, data_path_valid, reload_requested
-
-
-def render_sample_selection(available_samples: List[str]) -> Optional[List[str]]:
-    """
-    Render sample selection interface.
-
-    Args:
-        available_samples: List of available sample IDs
-
-    Returns:
-        Selected sample IDs or None for all samples
-    """
-    if not available_samples:
-        return None
-
-
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        selection_type = st.radio(
-            "Selection mode:",
-            ["All samples", "Custom selection"],
-            horizontal=True
-        )
-
-    with col2:
-        st.metric("Available Samples", len(available_samples))
-
-    if selection_type == "Custom selection":
-        selected_samples = st.multiselect(
-            "Select samples:",
-            options=available_samples,
-            default=available_samples[:5] if len(available_samples) > 5 else available_samples,
-            help="Choose specific samples for analysis"
-        )
-        return selected_samples if selected_samples else None
-
-    return None  # Return None for all samples
+        return data_path, data_path_valid, reload_requested, sample_selection_manager
 
 
 def render_metrics_section(section_data: Dict[str, Any]):
@@ -510,33 +491,30 @@ def main():
     css_content = load_css()
     if css_content:
         st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
-        logger.info("CSS applied successfully")
 
     # Application header
     st.title("🧬 Viral Genomics Protocol Comparison")
-    st.markdown("**Clean Modular Analysis Dashboard**")
+    st.markdown("**Analysis Dashboard**")
 
     # Sidebar configuration
-    data_path, data_path_valid, reload_requested = render_sidebar()
+    data_path, data_path_valid, reload_requested, sample_selection_manager = render_sidebar()
 
     if not data_path_valid:
         # Welcome screen
         st.markdown("""
-        ## Welcome to the Clean Modular Dashboard! 🎉
+        ## Welcome to the Analysis Dashboard! 🎉
 
-        This dashboard automatically discovers analysis modules and creates tabs dynamically.
-        Each module provides:
+        Each page provides:
 
         - **📊 Summary Statistics** - Key metrics and analysis results
         - **📈 Visualizations** - Interactive plots and charts
         - **📋 Raw Data** - Access to underlying data tables
-        - **🎨 Custom Components** - Module-specific HTML components
 
         ### Getting Started:
 
         1. **Configure Data Path** 👈 Enter your data directory path in the sidebar
         2. **Select Samples** - Choose which samples to analyze
-        3. **Explore Modules** - Navigate through the automatically generated tabs
+        3. **Explore Page** - Navigate through the generated analysis tabs
         """)
         return
 
@@ -546,7 +524,7 @@ def main():
     available_modules = discovery.discover_modules()
 
     if not available_modules:
-        st.error("No analysis modules found. Please check your modules directory.")
+        st.error("No analysis modules found. Please check your modules code directory.")
         return
 
     # Get sample information from first available module
@@ -569,8 +547,13 @@ def main():
 
     # Sample selection
     selected_samples = None
-    if all_samples:
-        selected_samples = render_sample_selection(all_samples)
+    selected_preconfigured_info = None
+
+    if all_samples and sample_selection_manager:
+        selected_samples, selected_preconfigured_info = sample_selection_manager.render_sample_selection(all_samples)
+
+        # Display selected preconfigured info in sidebar if available
+        sample_selection_manager.render_sidebar_info(selected_preconfigured_info)
 
     st.markdown("---")
 
@@ -587,6 +570,7 @@ def main():
 
     # Footer
     st.markdown("---")
+
 
 if __name__ == "__main__":
     main()

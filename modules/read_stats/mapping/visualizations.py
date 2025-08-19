@@ -141,34 +141,46 @@ class MappingVisualizations:
                     dict(
                         label="Raw Mapped",
                         method="update",
-                        args=[{
-                            "visible": visibility_patterns['raw_mapped'],
-                            "yaxis.title": "Number of Reads"
-                        }]
+                        args=[
+                            {"visible": visibility_patterns['raw_mapped']},  # Data updates
+                            {  # Layout updates
+                                'yaxis.title': "Number of Reads (log scale)",
+                                'yaxis.type': "log"
+                            }
+                        ]
                     ),
                     dict(
                         label="Raw Unmapped",
                         method="update",
-                        args=[{
-                            "visible": visibility_patterns['raw_unmapped'],
-                            "yaxis.title": "Number of Reads"
-                        }]
+                        args=[
+                            {"visible": visibility_patterns['raw_unmapped']},  # Data updates
+                            {  # Layout updates
+                                'yaxis.title': "Number of Reads (log scale)",
+                                'yaxis.type': "log"
+                            }
+                        ]
                     ),
                     dict(
                         label="% Mapped",
                         method="update",
-                        args=[{
-                            "visible": visibility_patterns['pct_mapped'],
-                            "yaxis.title": "Percentage (%)"
-                        }]
+                        args=[
+                            {"visible": visibility_patterns['pct_mapped']},  # Data updates
+                            {  # Layout updates
+                                'yaxis.title': "Percentage (%)",
+                                'yaxis.type': "linear"
+                            }
+                        ]
                     ),
                     dict(
                         label="% Unmapped",
                         method="update",
-                        args=[{
-                            "visible": visibility_patterns['pct_unmapped'],
-                            "yaxis.title": "Percentage (%)"
-                        }]
+                        args=[
+                            {"visible": visibility_patterns['pct_unmapped']},  # Data updates
+                            {  # Layout updates
+                                'yaxis.title': "Percentage (%)",
+                                'yaxis.type': "linear"
+                            }
+                        ]
                     )
                 ]
             )
@@ -176,7 +188,10 @@ class MappingVisualizations:
 
         fig.update_layout(
             xaxis_title='',
-            yaxis_title='Number of Reads',
+            yaxis=dict(
+                title='Number of Reads (log scale)',
+                type='log'
+            ),
             xaxis_tickangle=-45,
             height=600,
             updatemenus=updatemenus,
@@ -194,6 +209,193 @@ class MappingVisualizations:
         # Set initial visibility to Raw Mapped
         for i, trace in enumerate(fig.data):
             trace.visible = visibility_patterns['raw_mapped'][i]
+
+        return fig
+
+    def create_interactive_mapping_umi_plot(self, species: str, sample_ids: Optional[List[str]] = None) -> go.Figure:
+        """
+        Create interactive UMI mapping plot for a specific species with button controls for UMI metrics.
+
+        Args:
+            species: Species to visualize
+            sample_ids: Optional list of sample IDs to visualize
+
+        Returns:
+            Plotly figure with interactive controls for UMI statistics
+        """
+        if "mapping" not in self.data or self.data["mapping"].empty:
+            return go.Figure()
+
+        mapping_df = self.data["mapping"].copy()
+        if sample_ids:
+            mapping_df = mapping_df[mapping_df['sample'].isin(sample_ids)]
+
+        # Filter for specific species
+        species_data = mapping_df[mapping_df['species'] == species]
+
+        if species_data.empty:
+            return go.Figure()
+
+        fig = go.Figure()
+
+        # Get unique segments for this species
+        segments = species_data['segment'].unique()
+
+        # Define color palette for segments - different shades for UMI metrics
+        segment_colors = {
+            'umi_reads': ['#84b7f3', '#547eb4', '#2e4667'],
+            'total_umis': ['#84b7f3', '#547eb4', '#2e4667'],
+            'unique_umis': ['#84b7f3', '#547eb4', '#2e4667'],
+            'pcr_cycles': ['#84b7f3', '#547eb4', '#2e4667'],
+        }
+
+        # Create color mappings for each segment
+        umi_reads_colors = {segment: segment_colors['umi_reads'][i % len(segment_colors['umi_reads'])]
+                           for i, segment in enumerate(segments)}
+        total_umis_colors = {segment: segment_colors['total_umis'][i % len(segment_colors['total_umis'])]
+                            for i, segment in enumerate(segments)}
+        unique_umis_colors = {segment: segment_colors['unique_umis'][i % len(segment_colors['unique_umis'])]
+                             for i, segment in enumerate(segments)}
+        pcr_cycles_colors = {segment: segment_colors['pcr_cycles'][i % len(segment_colors['pcr_cycles'])]
+                            for i, segment in enumerate(segments)}
+
+        # Add all 4 UMI trace types for each segment
+        for segment in segments:
+            segment_data = species_data[species_data['segment'] == segment]
+
+            # UMI Deduplicated Reads (initially visible)
+            fig.add_trace(go.Bar(
+                x=segment_data['sample'],
+                y=segment_data['umi_mapping_reads'],
+                name=f'UMI Reads - {segment}',
+                visible=True,
+                legendgroup=f'umi_reads_{segment}',
+                marker_color=umi_reads_colors[segment]
+            ))
+
+            # Total UMIs (initially hidden)
+            fig.add_trace(go.Bar(
+                x=segment_data['sample'],
+                y=segment_data['total_UMIs'],
+                name=f'Total UMIs - {segment}',
+                visible=False,
+                legendgroup=f'total_umis_{segment}',
+                marker_color=total_umis_colors[segment]
+            ))
+
+            # Unique UMIs (initially hidden)
+            fig.add_trace(go.Bar(
+                x=segment_data['sample'],
+                y=segment_data['unique_UMIs'],
+                name=f'Unique UMIs - {segment}',
+                visible=False,
+                legendgroup=f'unique_umis_{segment}',
+                marker_color=unique_umis_colors[segment]
+            ))
+
+            # Estimated PCR Cycles (initially hidden)
+            fig.add_trace(go.Bar(
+                x=segment_data['sample'],
+                y=segment_data['estimated_PCR_cycles'],
+                name=f'PCR Cycles - {segment}',
+                visible=False,
+                legendgroup=f'pcr_cycles_{segment}',
+                marker_color=pcr_cycles_colors[segment]
+            ))
+
+        n_segments = len(segments)
+
+        # Create visibility patterns for all 4 UMI metrics
+        # [UMI Reads, Total UMIs, Unique UMIs, PCR Cycles] per segment
+        visibility_patterns = {
+            'umi_reads': [True, False, False, False] * n_segments,
+            'total_umis': [False, True, False, False] * n_segments,
+            'unique_umis': [False, False, True, False] * n_segments,
+            'pcr_cycles': [False, False, False, True] * n_segments
+        }
+
+        # Create single row with all 4 UMI metric buttons
+        updatemenus = [
+            dict(
+                type="buttons",
+                direction="right",
+                showactive=True,
+                x=-0.05,
+                xanchor="left",
+                y=1.15,
+                yanchor="top",
+                buttons=[
+                    dict(
+                        label="UMI Reads",
+                        method="update",
+                        args=[
+                            {"visible": visibility_patterns['umi_reads']},  # Data updates
+                            {  # Layout updates
+                                'yaxis.title': "Number of Reads (log scale)",
+                                'yaxis.type': "log"
+                            }
+                        ]
+                    ),
+                    dict(
+                        label="Total UMIs",
+                        method="update",
+                        args=[
+                            {"visible": visibility_patterns['total_umis']},  # Data updates
+                            {  # Layout updates
+                                'yaxis.title': "Number of UMIs (log scale)",
+                                'yaxis.type': "log"
+                            }
+                        ]
+                    ),
+                    dict(
+                        label="Unique UMIs",
+                        method="update",
+                        args=[
+                            {"visible": visibility_patterns['unique_umis']},  # Data updates
+                            {  # Layout updates
+                                'yaxis.title': "Number of Unique UMIs (log scale)",
+                                'yaxis.type': "log"
+                            }
+                        ]
+                    ),
+                    dict(
+                        label="PCR Cycles",
+                        method="update",
+                        args=[
+                            {"visible": visibility_patterns['pcr_cycles']},  # Data updates
+                            {  # Layout updates
+                                'yaxis.title': "Estimated PCR Cycles",
+                                'yaxis.type': "linear"
+                            }
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        fig.update_layout(
+            xaxis_title='',
+            yaxis=dict(
+                title='Number of Reads (log scale)',
+                type='log'
+            ),
+            xaxis_tickangle=-45,
+            height=600,
+            updatemenus=updatemenus,
+            showlegend=True,
+            barmode='group',
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.2,
+                xanchor="center",
+                x=0.5
+            )
+        )
+
+        # Set initial visibility to UMI Reads
+        for i, trace in enumerate(fig.data):
+            trace.visible = visibility_patterns['umi_reads'][i]
 
         return fig
 
@@ -219,8 +421,11 @@ class MappingVisualizations:
         # Create interactive plots for each species
         species_list = mapping_df['species'].unique()
         for species in species_list:
-            species_fig = self.create_interactive_mapping_plot(species, sample_ids)
-            if species_fig.data:
-                figures[f'Mapping Statistics - {species}'] = species_fig
+            mapping_fig = self.create_interactive_mapping_plot(species, sample_ids)
+            if mapping_fig.data:
+                figures[f'Mapping Statistics - {species}'] = mapping_fig
+            umi_fig = self.create_interactive_mapping_umi_plot(species, sample_ids)
+            if umi_fig.data:
+                figures[f'UMI Statistics - {species}'] = umi_fig
 
         return figures

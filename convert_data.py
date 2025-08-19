@@ -51,7 +51,10 @@ def extract_mapping(file_path: Path) -> pd.DataFrame:
         "(samtools Raw) reads mapped (R1+R2)",
         "(samtools Raw) reads mapped %",
         "(samtools Raw) reads unmapped (R1+R2)",
-        "(samtools Raw) reads unmapped %"
+        "(samtools Raw) reads unmapped %",
+        "(umitools) deduplicated reads (R1,R2)",
+        "(umitools) total UMIs",
+        "(umitools) unique UMIs"
     ]
 
     for column in columns_of_interest:
@@ -59,7 +62,15 @@ def extract_mapping(file_path: Path) -> pd.DataFrame:
             logging.error("Column '%s' not found in the main DataFrame", column)
             sys.exit(1)
 
-    mapping_stats = df[columns_of_interest]
+    mapping_stats = df[columns_of_interest].copy()
+
+    # Calculate estimated PCR cycles: Total UMIs ÷ Unique UMIs
+    # This represents the average number of copies of each read (amplification level)
+    mapping_stats["(umitools) estimated PCR cycles"] = (
+        pd.to_numeric(mapping_stats["(umitools) total UMIs"], errors="coerce") /
+        pd.to_numeric(mapping_stats["(umitools) unique UMIs"], errors="coerce")
+    )
+
     return pd.DataFrame(mapping_stats)
 
 
@@ -169,36 +180,40 @@ def write_dfs(output_dfs: Dict[str, pd.DataFrame], output_dir: Path) -> None:
             logging.warning("DataFrame for '%s' is of unsupported type, skipping", name)
 
 
-def main(args: argparse.Namespace) -> int:
+def main(cli_args: argparse.Namespace) -> int:
     """
     Main function to handle the conversion process.
 
     Args:
-        args: Parsed command line arguments.
+        cli_args: Parsed command line arguments.
     """
-    logging.basicConfig(level=args.log_level.upper())
+    logging.basicConfig(level=cli_args.log_level.upper())
 
     output_dfs = {}
 
     # Find all relevant files
-    locations = find_locations(Path(args.input_dir))
+    locations = find_locations(Path(cli_args.input_dir))
 
     if not locations:
-        logging.error("No relevant files found in %s", args.input_dir)
+        logging.error("No relevant files found in %s", cli_args.input_dir)
         return 1
 
     if locations.get("mainexcel"):
-        output_dfs["mapping"] = extract_mapping(Path(locations["mainexcel"]))
-        output_dfs["reads"] = extract_reads(Path(locations["mainexcel"]))
+        main_excel = locations["mainexcel"]
+        if isinstance(main_excel, Path):
+            output_dfs["mapping"] = extract_mapping(main_excel)
+            output_dfs["reads"] = extract_reads(main_excel)
 
     if locations.get("comparison_excels"):
-        output_dfs["comparison_excels"] = {
-            comp_excel.stem.replace("SeqID_analysis-outline_to-do_", ""): extract_comparison(Path(comp_excel))
-            for comp_excel in locations["comparison_excels"]
-        }
+        comparison_excels = locations["comparison_excels"]
+        if isinstance(comparison_excels, list):
+            output_dfs["comparison_excels"] = {
+                comp_excel.stem.replace("SeqID_analysis-outline_to-do_", ""): extract_comparison(comp_excel)
+                for comp_excel in comparison_excels
+            }
 
     if output_dfs:
-        write_dfs(output_dfs, Path(args.output_dir))
+        write_dfs(output_dfs, Path(cli_args.output_dir))
     else:
         logging.error("No output DataFrames to write.")
         return 1

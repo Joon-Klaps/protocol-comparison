@@ -145,8 +145,8 @@
 
 /* Sub-tab container - rounded edges with subtle background */
 .stTabs .stTabs [data-baseweb="tab-list"] {
-    margin: 1.5rem 0 1rem 0 !important;
-    padding: 0.4rem !important;
+    margin: 0.5rem 0 1rem 0 !important;
+    padding: 0.2rem !important;
     background: #f8fafc !important;
     border-radius: 22px !important;
     border: 1px solid #e2e8f0 !important;
@@ -169,7 +169,7 @@
 
 /* Sub-tab text styling - rounded edges with subtle background */
 .stTabs .stTabs [data-baseweb="tab-list"] button[data-baseweb="tab"] p {
-    font-size: 0.95rem !important;
+    font-size: 0.65rem !important;
     font-weight: 600 !important;
     padding: 0.7rem 1.3rem !important;
     margin: 0 !important;
