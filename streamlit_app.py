@@ -174,16 +174,6 @@ class DataPathManager:
         return True, f"Valid data path: {data_path}"
 
 
-def sync_coverage_threshold_from_slider():
-    """Callback to sync threshold when slider changes."""
-    if 'coverage_depth_slider' in st.session_state:
-        st.session_state.coverage_depth_threshold = st.session_state.coverage_depth_slider
-
-def sync_coverage_threshold_from_number():
-    """Callback to sync threshold when number input changes."""
-    if 'coverage_depth_number' in st.session_state:
-        st.session_state.coverage_depth_threshold = st.session_state.coverage_depth_number
-
 def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]:
     """
     Render sidebar configuration.
@@ -292,34 +282,38 @@ def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]
                     col1, col2 = st.columns([2, 1])
 
                     with col1:
-                        # Slider control with callback
-                        st.slider(
+                        # Slider control (no callback)
+                        slider_value = st.slider(
                             "Min Depth Threshold",
                             min_value=1,
                             max_value=500,
                             value=st.session_state.coverage_depth_threshold,
                             step=1,
                             help="Minimum depth required to consider a genomic position as 'recovered'",
-                            key="coverage_depth_slider",
-                            on_change=sync_coverage_threshold_from_slider
+                            key="coverage_depth_slider"
                         )
 
                     with col2:
-                        # Number input control with callback
-                        st.number_input(
+                        # Number input control (no callback)
+                        number_value = st.number_input(
                             "Exact Value",
                             min_value=1,
                             max_value=500,
                             value=st.session_state.coverage_depth_threshold,
                             step=1,
                             help="Type exact depth threshold",
-                            key="coverage_depth_number",
-                            on_change=sync_coverage_threshold_from_number
+                            key="coverage_depth_number"
                         )
 
+                    # Simple synchronization: update session state if either control changed
+                    # Only update if the value actually changed to avoid unnecessary updates
+                    if slider_value != st.session_state.coverage_depth_threshold:
+                        st.session_state.coverage_depth_threshold = slider_value
+                    elif number_value != st.session_state.coverage_depth_threshold:
+                        st.session_state.coverage_depth_threshold = number_value
+
                     # Display current setting
-                    current_threshold = st.session_state.coverage_depth_threshold
-                    st.caption(f"🎯 Current depth threshold: **{current_threshold}x**")
+                    st.caption(f"🎯 Current depth threshold: **{st.session_state.coverage_depth_threshold}x**")
 
                 # Add checkboxes for other modules as needed
                 # read_stats_enabled = st.checkbox(
