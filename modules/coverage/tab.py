@@ -64,20 +64,20 @@ class CoverageTab:
         """
         Render UI controls for the coverage tab and return selected depth threshold.
         This method contains Streamlit-specific code for the controls.
-        
+
         Returns:
             Selected depth threshold value
         """
         try:
             import streamlit as st
-            
+
             # Create a container for controls
             with st.container():
                 st.markdown("### ⚙️ Analysis Controls")
-                
+
                 # Create columns for slider and number input
                 col1, col2 = st.columns([2, 1])
-                
+
                 with col1:
                     # Depth threshold slider
                     slider_value = st.slider(
@@ -89,7 +89,7 @@ class CoverageTab:
                         help="Minimum depth required to consider a genomic position as 'recovered'. "
                              "Higher values are more stringent and may result in lower recovery percentages."
                     )
-                
+
                 with col2:
                     # Number input box
                     number_value = st.number_input(
@@ -100,7 +100,7 @@ class CoverageTab:
                         step=1,
                         help="Type exact depth threshold value"
                     )
-                
+
                 # Use the more recently changed value
                 # Check if either control changed from current threshold
                 if slider_value != self.current_depth_threshold:
@@ -109,16 +109,16 @@ class CoverageTab:
                     depth_threshold = number_value
                 else:
                     depth_threshold = self.current_depth_threshold
-                
+
                 # Update current threshold if changed
                 if depth_threshold != self.current_depth_threshold:
                     self.current_depth_threshold = depth_threshold
-                    
+
                 # Display current threshold info
                 st.info(f"🎯 Current threshold: **{depth_threshold}x** coverage")
-                
+
                 return depth_threshold
-                
+
         except ImportError:
             # Streamlit not available, return default
             logger.warning("Streamlit not available for UI controls, using default depth threshold")
@@ -130,7 +130,7 @@ class CoverageTab:
     def _get_current_depth_threshold(self) -> int:
         """
         Get the current depth threshold from sidebar controls or fallback to instance default.
-        
+
         Returns:
             Current depth threshold value
         """
@@ -141,7 +141,7 @@ class CoverageTab:
                 return st.session_state['coverage_depth_threshold']
         except ImportError:
             pass
-        
+
         # Fallback to instance default
         return self.current_depth_threshold
 

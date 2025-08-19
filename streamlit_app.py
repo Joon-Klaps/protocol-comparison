@@ -174,6 +174,16 @@ class DataPathManager:
         return True, f"Valid data path: {data_path}"
 
 
+def sync_coverage_threshold_from_slider():
+    """Callback to sync threshold when slider changes."""
+    if 'coverage_depth_slider' in st.session_state:
+        st.session_state.coverage_depth_threshold = st.session_state.coverage_depth_slider
+
+def sync_coverage_threshold_from_number():
+    """Callback to sync threshold when number input changes."""
+    if 'coverage_depth_number' in st.session_state:
+        st.session_state.coverage_depth_threshold = st.session_state.coverage_depth_number
+
 def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]:
     """
     Render sidebar configuration.
@@ -256,14 +266,14 @@ def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]
         if data_path_valid:
             st.markdown("---")
             st.subheader("⚙️ Analysis Controls")
-            
+
             # Show available modules as checkboxes for controls
             available_module_names = []
             if 'available_modules' in st.session_state:
                 available_module_names = [
                     (name, info.get('title', name)) for name, info in st.session_state['available_modules']
                 ]
-            
+
             if available_module_names:
                 # Coverage controls toggle
                 coverage_enabled = st.checkbox(
@@ -272,57 +282,58 @@ def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]
                     help="Show/hide coverage analysis parameter controls",
                     key="show_coverage_controls"
                 )
-                
+
                 if coverage_enabled:
+                    # Initialize the threshold in session state if not present
+                    if 'coverage_depth_threshold' not in st.session_state:
+                        st.session_state.coverage_depth_threshold = 10
+
                     # Coverage depth threshold controls
                     col1, col2 = st.columns([2, 1])
-                    
+
                     with col1:
-                        coverage_depth_threshold = st.slider(
+                        # Slider control with callback
+                        st.slider(
                             "Min Depth Threshold",
                             min_value=1,
                             max_value=500,
-                            value=st.session_state.get('coverage_depth_threshold', 10),
+                            value=st.session_state.coverage_depth_threshold,
                             step=1,
                             help="Minimum depth required to consider a genomic position as 'recovered'",
-                            key="coverage_depth_slider"
+                            key="coverage_depth_slider",
+                            on_change=sync_coverage_threshold_from_slider
                         )
-                    
+
                     with col2:
-                        coverage_depth_number = st.number_input(
+                        # Number input control with callback
+                        st.number_input(
                             "Exact Value",
                             min_value=1,
                             max_value=500,
-                            value=st.session_state.get('coverage_depth_threshold', 10),
+                            value=st.session_state.coverage_depth_threshold,
                             step=1,
                             help="Type exact depth threshold",
-                            key="coverage_depth_number"
+                            key="coverage_depth_number",
+                            on_change=sync_coverage_threshold_from_number
                         )
-                    
-                    # Store the selected threshold in session state
-                    # Use the most recently changed value
-                    if coverage_depth_threshold != st.session_state.get('coverage_depth_threshold', 10):
-                        st.session_state['coverage_depth_threshold'] = coverage_depth_threshold
-                    elif coverage_depth_number != st.session_state.get('coverage_depth_threshold', 10):
-                        st.session_state['coverage_depth_threshold'] = coverage_depth_number
-                    
+
                     # Display current setting
-                    current_threshold = st.session_state.get('coverage_depth_threshold', 10)
+                    current_threshold = st.session_state.coverage_depth_threshold
                     st.caption(f"🎯 Current depth threshold: **{current_threshold}x**")
-                
+
                 # Add checkboxes for other modules as needed
                 # read_stats_enabled = st.checkbox(
                 #     "📈 Read Statistics Controls",
                 #     value=False,
                 #     help="Show/hide read statistics parameter controls"
                 # )
-                # 
+                #
                 # consensus_enabled = st.checkbox(
-                #     "🧬 Consensus Analysis Controls", 
+                #     "🧬 Consensus Analysis Controls",
                 #     value=False,
                 #     help="Show/hide consensus analysis parameter controls"
                 # )
-            
+
             else:
                 st.info("No analysis modules available")
 
