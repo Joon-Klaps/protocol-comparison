@@ -1,0 +1,83 @@
+# Pure Dash Application for Viral Genomics Protocol Comparison
+# No Streamlit dependencies - Dash only!
+
+.PHONY: help install run dev test clean info
+
+# Project configuration
+PROJECT_DIR := /Users/joonklaps/Desktop/School/PhD/projects/LVE-BE002-PIPELINE/LVE-BE02-Supplmentary/results/HPC-results/TMP-RUN001-004/inrahost-analysis/analysis/protocol-comparison
+CONDA_ENV := intrahost-env
+
+# Helper to run commands in correct environment and directory
+define run_in_env
+	cd $(PROJECT_DIR) && conda activate $(CONDA_ENV) && $(1)
+endef
+
+# Default target
+help:
+	@echo "🧬 Viral Genomics Protocol Comparison - Pure Dash Application"
+	@echo "============================================================"
+	@echo ""
+	@echo "Available commands:"
+	@echo "  install       - Install Python dependencies"
+	@echo "  run           - Run the Dash application"
+	@echo "  dev           - Run Dash application in development mode"
+	@echo "  test          - Test Dash components"
+	@echo "  clean         - Clean up generated files"
+	@echo "  info          - Show system information"
+	@echo "  help          - Show this help message"
+	@echo ""
+	@echo "🌐 Access dashboard at: http://localhost:8050"
+
+# Install dependencies
+install:
+	@echo "📦 Installing dependencies in $(CONDA_ENV) environment..."
+	$(call run_in_env,pip install -r requirements.txt)
+	@echo "✅ Dependencies installed!"
+
+# Run Dash application
+run:
+	@echo "🚀 Starting Dash application..."
+	@echo "🌐 Access at: http://localhost:8050"
+	@echo "📁 Data path: ../../data/app"
+	@echo ""
+	$(call run_in_env,python dash_app.py)
+
+# Run in development mode
+dev:
+	@echo "🛠️  Starting Dash application in development mode..."
+	@echo "🌐 Access at: http://localhost:8050"
+	@echo "🔄 Auto-reload enabled"
+	@echo ""
+	$(call run_in_env,python dash_app.py --debug)
+
+# Test Dash components
+test:
+	@echo "🧪 Testing Dash components..."
+	$(call run_in_env,python test_simple.py)
+
+# Show system information
+info:
+	@echo "📊 System Information:"
+	@echo "====================="
+	@$(call run_in_env,python --version)
+	@$(call run_in_env,pip show dash | head -2)
+	@echo ""
+	@echo "📁 Project Directory: $(PROJECT_DIR)"
+	@echo "🐍 Conda Environment: $(CONDA_ENV)"
+	@echo "🌐 Dashboard URL: http://localhost:8050"
+
+# Clean up generated files
+clean:
+	@echo "🧹 Cleaning up generated files..."
+	$(call run_in_env,find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true)
+	$(call run_in_env,find . -name "*.pyc" -delete 2>/dev/null || true)
+	$(call run_in_env,find . -name "*.log" -delete 2>/dev/null || true)
+	@echo "✅ Cleanup complete!"
+
+# Quick start for new users
+quickstart: install run
+
+# Show running processes
+ps:
+	@echo "🔍 Checking for running Dash processes..."
+	@lsof -i :8050 || echo "No processes running on port 8050"
