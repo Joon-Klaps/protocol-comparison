@@ -6,9 +6,9 @@ A script to convert output files from nf-core/viralmetagenome to Parquet format 
 import pandas as pd
 import logging
 import sys
-import os
 import argparse
 import re
+import subprocess
 from pathlib import Path
 from typing import Dict, Union, List
 from tqdm import tqdm
@@ -74,6 +74,41 @@ def extract_mapping(file_path: Path) -> pd.DataFrame:
     )
 
     return pd.DataFrame(mapping_stats)
+
+def extract_contigs(file_path: Path) -> pd.DataFrame:
+    """
+    Extract contig statistics from the main DataFrame.
+
+    Args:
+        file_path: Path to the Excel file.
+
+    Returns:
+        DataFrame with contig statistics.
+    """
+    df = load_excel(file_path, "contigs")
+
+    columns_of_interest = [
+        "sample",
+        "cluster",
+        "step",
+        "(annotation) acronym",
+        "(annotation) segment",
+        "(samtools Raw) reads mapped (R1+R2)",
+        "(samtools Raw) reads mapped %",
+        "(samtools Raw) reads unmapped (R1+R2)",
+        "(samtools Raw) reads unmapped %",
+        "(umitools) deduplicated reads (R1,R2)",
+        "(umitools) total UMIs",
+        "(umitools) unique UMIs"
+    ]
+
+    for column in columns_of_interest:
+        if column not in df.columns:
+            logging.error("Column '%s' not found in the main DataFrame", column)
+            sys.exit(1)
+
+    contig_stats = df[columns_of_interest].copy()
+    return pd.DataFrame(contig_stats)
 
 
 def extract_reads(file_path: Path) -> pd.DataFrame:
@@ -176,7 +211,7 @@ def extract_custom_vcf(file_path: Path) -> pd.DataFrame:
     df = df.fillna(0)
     return df
 
-def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path]]]:
+def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path], Dict]]:
     """
     Find all relevant files in the given directory.
 
@@ -205,16 +240,260 @@ def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path]]]:
     else:
         logging.warning("No comparison Excel files found in %s", comparison_excels)
 
-    custom_vcfs = [f for f in viralmetagenome.rglob("*/custom-vcf/*/*_constraint.vcf.tsv") if "seqruns-collapsed" not in str(f)]
-    if custom_vcfs:
+    if custom_vcfs := [f for f in viralmetagenome.rglob("*/custom-vcf/*/*_constraint.vcf.tsv") if "seqruns-collapsed" not in str(f)]:
         logging.info("Found custom VCF file: %s", custom_vcfs[0])
         locations["custom_vcfs"] = custom_vcfs
     else:
         logging.warning("No custom VCF files found in %s", viralmetagenome)
 
+    if denovo_seq_lasv := [f for f in viralmetagenome.rglob("*/lasvdedup-out/dedup/**/good/*.fasta") if "seqruns-collapsed" not in str(f)]:
+        # Sanity check: within every 'good' directory, there should only be a single sequence
+        good_dirs = {}
+        for f in denovo_seq_lasv:
+            good_dir = f.parent
+            good_dirs.setdefault(str(good_dir), []).append(f)
+
+        multiple_seqs = [files for files in good_dirs.values() if len(files) > 1]
+
+        if multiple_seqs:
+            logging.warning("Multiple sequences found in some 'good' directories. Attempting to filter using annotations.")
+
+            if annotations := [f for f in viralmetagenome.rglob("*/lasvdedup-out/dedup/*.figtree.ann")]:
+                annotation_df = pd.concat([pd.read_csv(f, sep='\t') for f in annotations], ignore_index=True)
+                good_df = annotation_df[annotation_df["classification"] == "good"]
+                good_df["clean_name"] = good_df["sequence_name"].apply(lambda x: x.replace("_R_", "").split(".")[0])
+
+                # Filter the original list based on annotations
+                denovo_seq_lasv = [f for f in denovo_seq_lasv if any(contig in str(f) for contig in good_df["clean_name"])]
+                logging.info("Filtered sequences based on annotations. Remaining: %s", len(denovo_seq_lasv))
+
+                # Re-check after filtering
+                good_dirs = {}
+                for f in denovo_seq_lasv:
+                    good_dir = f.parent
+                    good_dirs.setdefault(str(good_dir), []).append(f)
+
+                multiple_seqs = [files for files in good_dirs.values() if len(files) > 1]
+
+                if multiple_seqs:
+                    logging.error("Multiple sequences still found after filtering:")
+                    for files in multiple_seqs:
+                        logging.error([str(f) for f in files])
+                    sys.exit(1)
+                else:
+                    logging.info("Successfully resolved multiple sequences using annotations.")
+            else:
+                logging.error("Multiple sequences found but no annotation files available for filtering:")
+                for files in multiple_seqs:
+                    logging.error([str(f) for f in files])
+                sys.exit(1)
+        else:
+            logging.info("Sanity check passed: Single sequence found in each 'good' directory.")
+
+        # Now create the L and S lists from the (potentially filtered) sequence list
+        dn_lasv_l = [f for f in denovo_seq_lasv if "LASV-L" in str(f)]
+        dn_lasv_s = [f for f in denovo_seq_lasv if "LASV-S" in str(f)]
+
+        locations["alignment"] = {
+            "denovo": {"LASV": {
+                "L": dn_lasv_l,
+                "S": dn_lasv_s
+            }}
+        }
+    else:
+        logging.warning("No de novo sequence files found for LASV  %s", viralmetagenome)
+
+    if seq_all := [f for f in viralmetagenome.rglob("*.consensus.fasta") if "seqruns-collapsed" not in str(f)]:
+        logging.info("Found de sequence files: %s", len(seq_all))
+        hazv_seq_all = [f for f in seq_all if "it2" in str(f)]
+        mapping_seq_all = [f for f in seq_all if "constraint" in str(f)]
+        locations["alignment"]["denovo"]["HAZV"] = {
+            "L": hazv_seq_all, "S": hazv_seq_all, "M": hazv_seq_all
+        }
+        locations["alignment"]["mapping"] = {
+            "LASV": {"S": mapping_seq_all, "L": mapping_seq_all},
+            "HAZV": {"S": mapping_seq_all, "L": mapping_seq_all, "M": mapping_seq_all}
+        }
+    else:
+        logging.warning("No de novo sequence files found for it2 dir %s", viralmetagenome)
 
     return locations
 
+
+def generate_alignments(alignment: Dict, contig_df: pd.DataFrame, mapping_df: pd.DataFrame, output_dir: Path):
+    """Extract alignment data from FASTA files."""
+
+    BLACKLIST_SAMPLES = ["LVE00288", "LVE00290", "LVE00385"]
+
+    # Step 1: Create three lookup dataframes
+    hazv_contigs = contig_df[(contig_df["(annotation) acronym"] == "HAZV") & (~contig_df["sample"].isin(BLACKLIST_SAMPLES))].copy()
+    lasv_mapping = mapping_df[(mapping_df["species"] == "LASV") & (~mapping_df["sample"].isin(BLACKLIST_SAMPLES))].copy()
+    hazv_mapping = mapping_df[(mapping_df["species"] == "HAZV") & (~mapping_df["sample"].isin(BLACKLIST_SAMPLES))].copy()
+
+    logging.debug(f"HAZV contigs: {hazv_contigs.shape}")
+    logging.debug(f"LASV mapping: {lasv_mapping.shape}")
+    logging.debug(f"HAZV mapping: {hazv_mapping.shape}")
+
+    # Step 2: Create alignment_name column for each dataframe
+    hazv_contigs['alignment_name'] = hazv_contigs['sample'] + '_' + hazv_contigs['cluster']
+    lasv_mapping['alignment_name'] = lasv_mapping['sample'] + "_" + lasv_mapping['cluster']
+    hazv_mapping['alignment_name'] = hazv_mapping['sample'] + "_" + hazv_mapping['cluster']
+
+    logging.debug(f"Sample HAZV contig alignment_names: {hazv_contigs['alignment_name'].head().tolist()}")
+    logging.debug(f"Sample LASV mapping alignment_names: {lasv_mapping['alignment_name'].head().tolist()}")
+    logging.debug(f"Sample HAZV mapping alignment_names: {hazv_mapping['alignment_name'].head().tolist()}")
+
+    # Step 3: For each segment, create sets of alignment names
+    def get_alignment_names_by_segment(df, segment_col):
+        """Get alignment names grouped by segment."""
+        segments = {}
+        for segment in ['L', 'S', 'M']:
+            segment_df = df[df[segment_col] == segment]
+            segments[segment] = set(segment_df['alignment_name'])  # For contigs, use sample_cluster
+        return segments
+
+    hazv_contig_segments = get_alignment_names_by_segment(hazv_contigs, '(annotation) segment')
+    lasv_mapping_segments = get_alignment_names_by_segment(lasv_mapping, 'segment')
+    hazv_mapping_segments = get_alignment_names_by_segment(hazv_mapping, 'segment')
+
+    logging.debug(f"HAZV contig segments: {dict((k, len(v)) for k, v in hazv_contig_segments.items())}")
+    logging.debug(f"LASV mapping segments: {dict((k, len(v)) for k, v in lasv_mapping_segments.items())}")
+    logging.debug(f"HAZV mapping segments: {dict((k, len(v)) for k, v in hazv_mapping_segments.items())}")
+
+
+    def filter_paths_by_alignment_names(paths: list, valid_alignment_names: set) -> list:
+        """Filter paths to only include those with valid alignment names."""
+        return [l for l in paths if any(s in str(l) for s in valid_alignment_names)]
+
+    # Step 5: Apply filtering to each alignment category
+    result = {}
+
+    if denovo := alignment.get("denovo"):
+        result["denovo"] = {}
+
+        # LASV denovo - DON'T filter, just pass through all files
+        if "LASV" in denovo:
+            result["denovo"]["LASV"] = {}
+            for segment in ['L', 'S']:  # LASV only has L and S segments
+                if segment in denovo["LASV"]:
+                    # No filtering for LASV denovo - pass through all files
+                    result["denovo"]["LASV"][segment] = denovo["LASV"][segment]
+                    logging.debug(f"LASV denovo {segment}: {len(denovo['LASV'][segment])} files (no filtering)")
+
+        # HAZV denovo - filter by segments using sample_cluster pattern
+        if "HAZV" in denovo:
+            result["denovo"]["HAZV"] = {}
+            for segment in ['L', 'S', 'M']:
+                if segment in denovo["HAZV"]:
+                    valid_names = hazv_contig_segments[segment]
+                    filtered_paths = filter_paths_by_alignment_names(denovo["HAZV"][segment], valid_names)
+                    result["denovo"]["HAZV"][segment] = filtered_paths
+                    logging.debug(f"HAZV denovo {segment}: {len(filtered_paths)} files from {len(denovo['HAZV'][segment])} total")
+
+    if mapping := alignment.get("mapping"):
+        result["mapping"] = {}
+
+        # LASV mapping - filter by sample names only
+        if "LASV" in mapping:
+            result["mapping"]["LASV"] = {}
+            for segment in ['L', 'S']:
+                if segment in mapping["LASV"]:
+                    valid_samples = lasv_mapping_segments[segment]
+                    filtered_paths = filter_paths_by_alignment_names(mapping["LASV"][segment], valid_samples)
+                    result["mapping"]["LASV"][segment] = filtered_paths
+                    logging.debug(f"LASV mapping {segment}: {len(filtered_paths)} files from {len(mapping['LASV'][segment])} total")
+
+        # HAZV mapping - filter by sample names only
+        if "HAZV" in mapping:
+            result["mapping"]["HAZV"] = {}
+            for segment in ['L', 'S', 'M']:
+                if segment in mapping["HAZV"]:
+                    valid_samples = hazv_mapping_segments[segment]
+                    filtered_paths = filter_paths_by_alignment_names(mapping["HAZV"][segment], valid_samples)
+                    result["mapping"]["HAZV"][segment] = filtered_paths
+                    logging.debug(f"HAZV mapping {segment}: {len(filtered_paths)} files from {len(mapping['HAZV'][segment])} total")
+
+    return align_sequences(result, output_dir)
+
+def align_sequences(data: Dict, output_dir: Path):
+    """Recursively align sequences using MAFFT."""
+    logging.info("Starting sequence alignment")
+
+    def normalize_sequence_name(seq_name):
+        """Remove '_R_' prefix from sequence name for comparison."""
+        return seq_name.replace('_R_', '')
+
+    def get_sequence_names_from_fasta(file_path):
+        """Extract sequence names from a FASTA file, normalized."""
+        names = set()
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith('>'):
+                        seq_name = line[1:].strip()
+                        names.add(normalize_sequence_name(seq_name))
+        except FileNotFoundError:
+            pass
+        return names
+
+    def sequences_match(temp_input_path, output_file_path):
+        """Check if sequences in output file match those in temp input."""
+        if not output_file_path.exists():
+            return False
+
+        input_names = get_sequence_names_from_fasta(temp_input_path)
+        output_names = get_sequence_names_from_fasta(output_file_path)
+
+        return input_names == output_names
+
+    def process_item(item, path_parts=None):
+        if path_parts is None:
+            path_parts = []
+
+        if isinstance(item, list):
+            # Found sequences to align
+            if len(item) <= 1:
+                return item[0] if item else None
+
+            # Create temporary multi-FASTA file by concatenating all input files
+            temp_input = output_dir / "/".join(path_parts + ["temp_input.fasta"])
+            output_file = output_dir / "/".join(path_parts + ["aligned.fasta"])
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # Concatenate all FASTA files into one
+            with open(temp_input, "w", encoding="utf-8") as temp_f:
+                for fasta_path in item:
+                    with open(fasta_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        temp_f.write(content)
+                        if not content.endswith('\n'):
+                            temp_f.write('\n')
+
+            # Check if output already exists and contains the same sequences
+            if sequences_match(temp_input, output_file):
+                logging.info(f"Output file {output_file} already exists with matching sequences, skipping alignment")
+                temp_input.unlink()  # Clean up temporary file
+                return output_file
+
+            # Run MAFFT alignment on the combined file
+            logging.info(f"Running MAFFT alignment for {output_file}")
+            with open(output_file, "w", encoding="utf-8") as f:
+                subprocess.run(["mafft","--adjustdirection", "--thread", "8", str(temp_input)], stdout=f, check=True)
+
+            # Clean up temporary file
+            temp_input.unlink()
+            return output_file
+
+        elif isinstance(item, dict):
+            # Recursively process dictionary
+            return {key: process_item(value, path_parts + [key])
+                   for key, value in item.items()}
+
+        else:
+            # Single file, return as-is
+            return item
+
+    return process_item(data)
 
 def write_dfs(output_dfs: Dict[str, pd.DataFrame], output_dir: Path) -> None:
     """
@@ -234,7 +513,7 @@ def write_dfs(output_dfs: Dict[str, pd.DataFrame], output_dir: Path) -> None:
 
             output_path = output_dir / f"{name}.parquet"
             df.to_parquet(output_path, engine='pyarrow', compression='snappy', index=False)
-            logging.debug("Data for '%s' saved to %s", name, output_path)
+            # logging.debug("Data for '%s' saved to %s", name, output_path)
 
         elif isinstance(df, Dict):
             output_dir_name = output_dir / name
@@ -246,7 +525,7 @@ def write_dfs(output_dfs: Dict[str, pd.DataFrame], output_dir: Path) -> None:
 
 def main(cli_args: argparse.Namespace) -> int:
     """
-    Main function to handle the conversion process.
+    Main function to handle the convearsion process.
 
     Args:
         cli_args: Parsed command line arguments.
@@ -266,6 +545,7 @@ def main(cli_args: argparse.Namespace) -> int:
         main_excel = locations["mainexcel"]
         if isinstance(main_excel, Path):
             output_dfs["mapping"] = extract_mapping(main_excel)
+            output_dfs["contigs"] = extract_contigs(main_excel)
             output_dfs["reads"] = extract_reads(main_excel)
 
     if locations.get("comparison_excels"):
@@ -282,6 +562,13 @@ def main(cli_args: argparse.Namespace) -> int:
                 extract_custom_vcf_key(custom_vcf.name): extract_custom_vcf(custom_vcf)
                 for custom_vcf in tqdm(custom_vcfs, desc="Extracting custom VCFs")
             }
+    if (locations.get("alignment") and
+    "mapping" in output_dfs and not output_dfs["mapping"].empty and
+    "contigs" in output_dfs and not output_dfs["contigs"].empty):
+        alignment_data = locations["alignment"]
+        if isinstance(alignment_data, dict):
+            alignments = generate_alignments(alignment_data, output_dfs["contigs"], output_dfs["mapping"], output_dir=Path(cli_args.output_dir) / "alignments")
+            logging.info("Alignment completed")
 
     if output_dfs:
         write_dfs(output_dfs, Path(cli_args.output_dir))

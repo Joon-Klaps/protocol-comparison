@@ -14,14 +14,6 @@ from .consensus import ConsensusAnalyzer, ConsensusDataManager
 from .coverage import CoverageAnalyzer, CoverageDataManager
 from .read_stats import ReadStatsAnalyzer
 
-# Try to import Streamlit page management (optional)
-try:
-    from .main import ModulePageManager, get_global_page_manager, create_main_streamlit_app
-    from .streamlit_base import PageRegistry, StreamlitPageComponent, PageConfig
-    _STREAMLIT_AVAILABLE = True
-except ImportError:
-    _STREAMLIT_AVAILABLE = False
-
 __all__ = [
     'DataManager',
     'BaseAnalyzer',
@@ -31,16 +23,5 @@ __all__ = [
     'CoverageDataManager',
     'ReadStatsAnalyzer'
 ]
-
-# Add Streamlit components if available
-if _STREAMLIT_AVAILABLE:
-    __all__.extend([
-        'ModulePageManager',
-        'get_global_page_manager',
-        'create_main_streamlit_app',
-        'PageRegistry',
-        'StreamlitPageComponent',
-        'PageConfig'
-    ])
 
 __version__ = '0.1.0'

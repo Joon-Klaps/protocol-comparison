@@ -9,12 +9,6 @@ components for web-based dashboards.
 from .reads import ReadProcessingSummaryStats, ReadProcessingVisualizations
 from .mapping import MappingSummaryStats, MappingVisualizations
 
-# Try to import streamlit components (optional)
-try:
-    from .streamlit_pages import get_read_stats_pages, ReadProcessingPage, MappingStatisticsPage
-    _STREAMLIT_AVAILABLE = True
-except ImportError:
-    _STREAMLIT_AVAILABLE = False
 
 __all__ = [
     'ReadProcessingSummaryStats',
@@ -23,14 +17,6 @@ __all__ = [
     'MappingVisualizations',
     'ReadStatsAnalyzer'
 ]
-
-# Add streamlit components to __all__ if available
-if _STREAMLIT_AVAILABLE:
-    __all__.extend([
-        'get_read_stats_pages',
-        'ReadProcessingPage',
-        'MappingStatisticsPage'
-    ])
 
 # Unified interface for backward compatibility
 class ReadStatsAnalyzer:

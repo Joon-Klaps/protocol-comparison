@@ -6,7 +6,7 @@ including loading coverage depth data and managing coverage-related datasets.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 import pandas as pd
 import logging
 
@@ -43,10 +43,10 @@ class CoverageDataManager(DataManager):
         """
         super().__init__(data_path)
         self.depth_dir = self.data_path / "custom_vcfs"
-        
+
         # Use cache key based on data path
         self.cache_key = str(self.depth_dir.absolute())
-        
+
         # Check if we already have cached data for this path
         if self.cache_key in _coverage_data_cache:
             logger.debug("Using cached coverage data for %s", self.cache_key)
@@ -55,7 +55,7 @@ class CoverageDataManager(DataManager):
         else:
             self._nested_data = None
             self._flat_data = None
-            
+
         self._validate_coverage_data_path()
 
     def _validate_coverage_data_path(self) -> None:
@@ -76,14 +76,14 @@ class CoverageDataManager(DataManager):
         if self._flat_data is None:
             logger.info("Loading coverage data for the first time for %s", self.cache_key)
             nested_data = self._load_data()
-            
+
             # Flatten the nested structure to match the base class interface
             flat_data = {}
             for sample_id, references in nested_data.items():
                 for reference, df in references.items():
                     key = f"{sample_id}_{reference}"
                     flat_data[key] = df
-                    
+
             # Cache both nested and flat data
             _coverage_data_cache[self.cache_key] = {
                 'nested_data': nested_data,
@@ -93,7 +93,7 @@ class CoverageDataManager(DataManager):
             self._flat_data = flat_data
         else:
             logger.debug("Using cached flat coverage data for %s", self.cache_key)
-                
+
         return self._flat_data
 
     def _load_data(self) -> Dict[str, Dict[str, pd.DataFrame]]:
@@ -154,7 +154,7 @@ class CoverageDataManager(DataManager):
         if self._nested_data is None:
             logger.info("Loading nested coverage data for the first time for %s", self.cache_key)
             self._nested_data = self._load_data()
-            
+
             # Also update the cache
             if self.cache_key not in _coverage_data_cache:
                 # If flat data also needs to be cached
@@ -163,7 +163,7 @@ class CoverageDataManager(DataManager):
                     for reference, df in references.items():
                         key = f"{sample_id}_{reference}"
                         flat_data[key] = df
-                        
+
                 _coverage_data_cache[self.cache_key] = {
                     'nested_data': self._nested_data,
                     'flat_data': flat_data
@@ -171,7 +171,7 @@ class CoverageDataManager(DataManager):
                 self._flat_data = flat_data
         else:
             logger.debug("Using cached nested coverage data for %s", self.cache_key)
-            
+
         return self._nested_data
 
     def get_available_samples(self) -> List[str]:
@@ -183,22 +183,33 @@ class CoverageDataManager(DataManager):
         """
         return sorted(list(self.data.keys()))
 
-    def get_available_references(self, sample_id: Optional[str] = None) -> List[str]:
+    def get_available_references(self, sample_id: Optional[Union[str, List[str]]] = None) -> List[str]:
         """
         Get available reference IDs from coverage data.
 
         Args:
             sample_id: Optional sample ID to get references for specific sample
+            sample_ids: Optional list of sample IDs to get references for specific samples
 
         Returns:
             Sorted list of reference identifiers
         """
-        if sample_id is not None:
+        if sample_id is not None and isinstance(sample_id, str):
+            references = set()
             if sample_id in self.data:
-                return sorted(list(self.data[sample_id].keys()))
+                references.update(self.data[sample_id].keys())
             else:
                 logger.warning("Sample ID %s not found in coverage data", sample_id)
-                return []
+            return sorted(list(references))
+
+        elif sample_id is not None and isinstance(sample_id, list):
+            references = set()
+            for sid in sample_id:
+                if sid in self.data:
+                    references.update(self.data[sid].keys())
+                else:
+                    logger.warning("Sample ID %s not found in coverage data", sid)
+            return sorted(list(references))
 
         # Get all references across all samples
         references = set()
@@ -272,7 +283,8 @@ class CoverageDataManager(DataManager):
             logger.warning("Depth column not found in DataFrame for %s, %s", sample_id, reference)
             return 0.0
 
-        total_positions = len(df)
+        # Get final Position value
+        total_positions = df['Position'].iloc[-1]
         recovered_positions = (df['depth'] >= depth_threshold).sum()
 
         if total_positions == 0:
@@ -331,3 +343,79 @@ class CoverageDataManager(DataManager):
         }
 
         return summary
+
+    def get_frequency_sd_data(self, sample_ids: List[str]) -> Dict[str, pd.DataFrame]:
+        """
+        Calculate frequency standard deviation data for specified samples.
+
+        This function computes the standard deviation of nucleotide frequencies across samples
+        for each genomic position, properly aligned by position coordinates.
+
+        Args:
+            sample_ids: List of sample identifiers to get frequency shift data for
+
+        Returns:
+            Dictionary with DataFrames containing frequency standard deviation data for each reference.
+            Each DataFrame contains columns: 'sdA', 'sdC', 'sdG', 'sdT', 'sum' with Position column.
+
+        Raises:
+            ValueError: If required columns are missing from the data
+        """
+        frequency_sd_data = {}
+        references = self.get_available_references(sample_ids)
+
+        for ref in references:
+            try:
+                # Step 1: Collect and prepare dataframes for this reference
+                dfs_to_concat = []
+                valid_sample_ids = []
+
+                for sample_id in sample_ids:
+                    sample_data = self.get_sample_data(sample_id, ref)
+                    if ref in sample_data and not sample_data[ref].empty:
+                        df = sample_data[ref].copy()
+
+                        # Ensure required columns exist
+                        required_cols = ['Position', 'freqA', 'freqC', 'freqG', 'freqT']
+                        if not all(col in df.columns for col in required_cols):
+                            raise ValueError(f"Missing required columns in data for sample {sample_id} and reference {ref}")
+
+                        df = df.set_index('Position')[['freqA', 'freqC', 'freqG', 'freqT']]
+                        df.columns = [f'{col}_{sample_id}' for col in df.columns]
+                        dfs_to_concat.append(df)
+                        valid_sample_ids.append(sample_id)
+
+                if not dfs_to_concat:
+                    logging.warning("No valid data found for reference %s", ref)
+                    frequency_sd_data[ref] = pd.DataFrame()
+                    continue
+
+                # Step 2: Combine all dataframes for the reference
+                combined_df = pd.concat(dfs_to_concat, axis=1, join='outer')
+
+                # Step 3: Reshape the data for easy standard deviation calculation
+                # Use `stack` to move sample-specific columns into rows, creating a multi-index
+                stacked_df = combined_df.stack().reset_index()
+                stacked_df.columns = ['Position', 'variable', 'value']
+
+                # Step 4: Extract the nucleotide type from the 'variable' column
+                stacked_df['nucleotide'] = stacked_df['variable'].str.extract(r'freq(.)_')
+
+                # Step 5: Group by Position and Nucleotide, then calculate std
+                sd_df = stacked_df.groupby(['Position', 'nucleotide'])['value'].std().unstack()
+
+                # Step 6: Clean up and calculate the sum
+                sd_df.columns = [f'sd{col}' for col in sd_df.columns]
+                sd_df = sd_df.fillna(0) # Replace NaN values (from positions with only one sample) with 0
+                sd_df['sum'] = sd_df.sum(axis=1)
+                sd_df.reset_index(inplace=True)
+
+                frequency_sd_data[ref] = sd_df
+                logging.debug("Calculated frequency SD for reference %s with %d samples and %d positions",
+                            ref, len(valid_sample_ids), len(sd_df))
+
+            except (ValueError, KeyError, pd.errors.ParserError) as e:
+                logging.error("Error calculating frequency SD for reference %s: %s", ref, e)
+                frequency_sd_data[ref] = pd.DataFrame()
+
+        return frequency_sd_data

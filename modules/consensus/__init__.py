@@ -1,14 +1,16 @@
 """
 Consensus analysis module.
 
-This module handles consensus sequence analysis:
-- Genome recovery statistics
-- ANI calculations
-- Consensus sequence comparisons
+This module handles consensus sequence analysis with tuple-based data structure:
+- Alignment statistics and comparisons
+- dash_bio visualization components
+- Method comparison (mapping vs denovo)
+- Streamlit integration support
 """
 
-from .summary_stats import ConsensusSummaryStats, ConsensusDataManager
+from .data import ConsensusDataManager
 from .visualizations import ConsensusVisualizations
+from .tab import ConsensusTab
 
 # Main unified analyzer
 class ConsensusAnalyzer:
@@ -29,73 +31,68 @@ class ConsensusAnalyzer:
         Initialize unified consensus analyzer.
 
         Args:
-            data_path: Path to data directory
+            data_path: Path to consensus analysis data directory
         """
-        from pathlib import Path
+        self.data_path = data_path
 
-        self.data_path = Path(data_path)
-
-        # Initialize sub-modules
-        self.consensus_stats = ConsensusSummaryStats(self.data_path)
+        # Initialize modular components with new structure
+        self.data_manager = ConsensusDataManager(self.data_path)
+        self.consensus_tab = ConsensusTab(self.data_path)
         self.consensus_viz = ConsensusVisualizations(self.data_path)
 
-        # Expose data for backward compatibility
-        self.data = self.consensus_stats.data
+    def get_available_alignments(self):
+        """Get available alignment keys."""
+        return self.consensus_tab.get_available_alignments()
 
-    def get_available_samples(self):
-        """Get available sample IDs from consensus data."""
-        return self.consensus_stats.data_manager.get_available_samples()
+    def get_available_samples(self, selected_key=None):
+        """Get list of available samples."""
+        if selected_key is None:
+            # Return all available alignments for backward compatibility
+            return self.get_available_alignments()
+        return self.consensus_tab.get_available_samples(selected_key)
 
-    def calculate_genome_recovery(self, sample_ids=None):
-        """Calculate genome recovery statistics for samples."""
-        return self.consensus_stats.calculate_genome_recovery_stats(sample_ids)
+    def calculate_summary_stats(self, selected_keys, sample_ids=None):
+        """Calculate summary statistics for selected alignments."""
+        return self.consensus_tab.get_summary_stats(selected_keys, sample_ids)
 
-    def calculate_ani_matrix(self, sample_ids=None):
-        """Calculate Average Nucleotide Identity (ANI) matrix between samples."""
-        return self.consensus_stats.calculate_ani_matrix(sample_ids)
+    def get_visualizations(self, selected_key, sample_ids=None):
+        """Get visualizations for a specific alignment."""
+        return self.consensus_tab.get_visualizations(selected_key, sample_ids)
 
-    def generate_summary_stats(self, sample_ids=None):
+    def run_analysis(self, selected_keys, sample_ids=None):
         """
-        Generate comprehensive summary statistics for consensus analysis.
+        Run complete consensus analysis workflow.
 
         Args:
+            selected_keys: List of (method, species, segment) tuples
             sample_ids: Optional list of sample IDs to analyze
 
         Returns:
-            Dictionary containing consensus statistics
+            Dictionary containing all analysis results
         """
-        return self.consensus_stats.calculate_overall_summary(sample_ids)
+        results = {
+            'summary_stats': {},
+            'visualizations': {},
+            'available_data': {}
+        }
 
-    def create_visualizations(self, sample_ids=None):
-        """
-        Create all visualizations for consensus analysis.
+        # Get summary statistics
+        results['summary_stats'] = self.calculate_summary_stats(selected_keys, sample_ids)
 
-        Args:
-            sample_ids: Optional list of sample IDs to visualize
+        # Get visualizations for each selected key
+        for key in selected_keys:
+            results['visualizations'][key] = self.get_visualizations(key, sample_ids)
 
-        Returns:
-            Dictionary of plotly figures
-        """
-        return self.consensus_viz.create_all_visualizations(sample_ids)
+        # Get available data info
+        results['available_data'] = {
+            'alignments': self.get_available_alignments(),
+            'samples_per_alignment': {
+                key: self.consensus_tab.get_available_samples(key)
+                for key in selected_keys
+            }
+        }
 
-    def export_results(self, output_path, sample_ids=None):
-        """
-        Export analysis results to files.
-
-        Args:
-            output_path: Directory to save results
-            sample_ids: Optional list of sample IDs to export
-        """
-        from pathlib import Path
-        import logging
-
-        output_path = Path(output_path)
-        output_path.mkdir(parents=True, exist_ok=True)
-
-        # Export consensus statistics
-        self.consensus_stats.export_results(output_path, sample_ids)
-
-        logging.getLogger(__name__).info("Consensus analysis results exported to %s", output_path)
+        return results
 
 
-__all__ = ['ConsensusSummaryStats', 'ConsensusVisualizations', 'ConsensusAnalyzer', 'ConsensusDataManager']
+__all__ = ['ConsensusDataManager', 'ConsensusVisualizations', 'ConsensusTab', 'ConsensusAnalyzer']

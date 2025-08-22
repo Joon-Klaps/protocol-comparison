@@ -51,7 +51,9 @@ class PreconfiguredSelections:
             'Comment_additional-information': 'comment'
         })
 
-        df['codes_list'] = df['codes_raw'].apply(lambda x: [c.strip() for c in str(x).split(',') if c.strip()])
+        df['codes_list'] = df['codes_raw'].apply(
+            lambda x: [c for c in str(x).replace(',', ' ').split() if c != '']
+        )
         df['source_file'] = parquet_file.name
         df['file_prefix'] = file_prefix
 

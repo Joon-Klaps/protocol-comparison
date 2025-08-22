@@ -216,6 +216,104 @@ class CoverageVisualizations:
 
         return fig
 
+    def create_freq_shift_individual_plot(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
+        """
+        Create frequency shift line plots showing individual nucleotide standard deviations.
+
+        Args:
+            sample_ids: Optional list of sample IDs to analyze
+
+        Returns:
+            Plotly figure with individual nucleotide frequency shift plots
+        """
+        if sample_ids is None:
+            sample_ids = self.data_manager.get_available_samples()
+
+        # Get frequency shift data
+        freq_shift_data = self.data_manager.get_frequency_sd_data(sample_ids)
+
+        if not freq_shift_data:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No frequency shift data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return fig
+
+        # Create subplots for each reference
+        references = list(freq_shift_data.keys())
+        if not references:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No valid frequency shift data",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return fig
+
+        fig = make_subplots(
+            rows=len(references), cols=1,
+            subplot_titles=[f'{ref} - Individual Nucleotide Frequency Shifts' for ref in references],
+            shared_xaxes=False,  # Independent x-axes
+            vertical_spacing=0.20
+        )
+
+        nucleotide_colors = {
+            'sdA': '#FF6B6B',  # Red for A
+            'sdC': '#4ECDC4',  # Teal for C
+            'sdG': '#45B7D1',  # Blue for G
+            'sdT': '#FFA07A'   # Orange for T
+        }
+
+        for row_idx, (reference, sd_df) in enumerate(freq_shift_data.items()):
+            if sd_df.empty:
+                continue
+
+            # Ensure we have the required columns
+            required_cols = ['Position', 'sdA', 'sdC', 'sdG', 'sdT']
+            missing_cols = [col for col in required_cols if col not in sd_df.columns]
+            if missing_cols:
+                logger.warning("Missing required columns %s in frequency shift data for reference %s",
+                             missing_cols, reference)
+                continue
+
+            # Add traces for each nucleotide
+            for nucleotide, color in nucleotide_colors.items():
+                fig.add_trace(
+                    go.Scatter(
+                        x=sd_df['Position'],
+                        y=sd_df[nucleotide],
+                        mode='lines',
+                        name=f'{nucleotide[-1]} ({reference})',  # Extract nucleotide letter
+                        line=dict(color=color, width=2),
+                        hovertemplate=f'<b>{nucleotide[-1]} - {reference}</b><br>' +
+                                    'Position: %{x}<br>' +
+                                    'Frequency SD: %{y:.4f}<br>' +
+                                    '<extra></extra>',
+                        showlegend=(row_idx == 0)  # Only show legend for first reference
+                    ),
+                    row=row_idx + 1, col=1
+                )
+
+        fig.update_layout(
+            title='Individual Nucleotide Frequency Standard Deviations',
+            height=300 * len(references),
+            showlegend=True,
+            hovermode='x unified'
+        )
+
+        # Update x-axis and y-axis labels for all subplots
+        for i in range(len(references)):
+            fig.update_xaxes(
+                title_text='Genomic Position',
+                range=[0, None],  # Start at 0, auto-scale max
+                row=i + 1, col=1
+            )
+            fig.update_yaxes(title_text='Frequency SD', row=i + 1, col=1)
+
+        return fig
+
     def create_segment_specific_plots(self, segment: str, sample_ids: Optional[List[str]] = None) -> go.Figure:
         """
         Create segment-specific coverage plots.
@@ -228,7 +326,7 @@ class CoverageVisualizations:
             Plotly figure for the segment
         """
         if not sample_ids:
-            sample_ids = self.data_manager.get_available_samples()
+            return go.Figure()
 
         # Filter samples that have data for this segment
         valid_samples = []
@@ -342,6 +440,120 @@ class CoverageVisualizations:
 
         return fig
 
+    def create_depth_plots_by_reference(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
+        """
+        Create depth plots with one subplot per reference, showing all samples on log scale.
+
+        Args:
+            sample_ids: Optional list of sample IDs to analyze
+
+        Returns:
+            Plotly figure with depth plots organized by reference
+        """
+        if sample_ids is None:
+            sample_ids = self.data_manager.get_available_samples()
+
+        # Get all available references
+        references = self.data_manager.get_available_references(sample_ids)
+
+        if not references:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No depth data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return fig
+
+        # Create subplots for each reference
+        fig = make_subplots(
+            rows=len(references), cols=1,
+            subplot_titles=[f'{ref} - Depth Coverage' for ref in references],
+            shared_xaxes=False,  # Independent x-axes
+            vertical_spacing=0.20
+        )
+
+        # Generate colors for samples
+        colors = px.colors.qualitative.Set3 + px.colors.qualitative.Pastel + px.colors.qualitative.Set1
+
+        for row_idx, reference in enumerate(references):
+            sample_count = 0
+
+            for sample_idx, sample_id in enumerate(sample_ids):
+                sample_data = self.data_manager.get_sample_data(sample_id, reference)
+
+                if reference in sample_data and not sample_data[reference].empty:
+                    df = sample_data[reference]
+
+                    # Check if required columns exist
+                    if 'Position' not in df.columns or 'depth' not in df.columns:
+                        logger.warning("Missing Position or depth columns for sample %s, reference %s",
+                                     sample_id, reference)
+                        continue
+
+                    # Filter out zero depth positions for log scale
+                    df_filtered = df[df['depth'] > 0].copy()
+
+                    if df_filtered.empty:
+                        logger.warning("No positions with depth > 0 for sample %s, reference %s",
+                                     sample_id, reference)
+                        continue
+
+                    color = colors[sample_idx % len(colors)]
+
+                    fig.add_trace(
+                        go.Scatter(
+                            x=df_filtered['Position'],
+                            y=df_filtered['depth'],
+                            mode='lines',
+                            name=f'{sample_id}',
+                            line=dict(color=color, width=1.5),
+                            hovertemplate=f'<b>{sample_id}</b><br>' +
+                                        'Position: %{x}<br>' +
+                                        'Depth: %{y}<br>' +
+                                        '<extra></extra>',
+                            showlegend=(row_idx == 0)  # Only show legend for first reference
+                        ),
+                        row=row_idx + 1, col=1
+                    )
+                    sample_count += 1
+
+            # Add depth threshold line for each subplot
+            if sample_count > 0:  # Only add threshold line if we have data
+                fig.add_hline(
+                    y=self.depth_threshold,
+                    line_dash="dash",
+                    line_color="red",
+                    line_width=2,
+                    annotation_text=f"Depth Threshold: {self.depth_threshold}x",
+                    annotation_position="top right",
+                    row=row_idx + 1, col=1
+                )
+
+        # Update layout
+        fig.update_layout(
+            title='Depth Coverage by Reference (Log Scale)',
+            height=300 * len(references),
+            showlegend=True,
+            hovermode='x unified'
+        )
+
+        # Update x-axis and y-axis labels for all subplots
+        for i in range(len(references)):
+            fig.update_xaxes(
+                title_text='Genomic Position',
+                range=[0, None],  # Start at 0, auto-scale max
+                row=i + 1, col=1
+            )
+            fig.update_yaxes(
+                title_text='Depth Coverage (log scale)',
+                type='log',
+                range= [0, 5],
+                row=i + 1, col=1
+            )
+
+        return fig
+
     def create_all_visualizations(self, sample_ids: Optional[List[str]] = None) -> Dict[str, go.Figure]:
         """
         Create all coverage visualizations.
@@ -359,7 +571,7 @@ class CoverageVisualizations:
             fig_overlay = self.create_coverage_overlay_plot(sample_ids)
             if fig_overlay.data:  # Only add if figure has data
                 figures['Coverage Overlay Plot'] = fig_overlay
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
             logger.warning("Failed to create coverage overlay plot: %s", e)
 
         # Recovery statistics bar plot
@@ -367,16 +579,24 @@ class CoverageVisualizations:
             fig_recovery = self.create_recovery_stats_plot(sample_ids)
             if fig_recovery.data:
                 figures['Genome Recovery Statistics'] = fig_recovery
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
             logger.warning("Failed to create recovery stats plot: %s", e)
 
-        # Coverage heatmap
+        # Frequency shift plots - Individual nucleotides
         try:
-            fig_heatmap = self.create_coverage_heatmap(sample_ids)
-            if fig_heatmap.data:
-                figures['Recovery Heatmap'] = fig_heatmap
-        except Exception as e:
-            logger.warning("Failed to create coverage heatmap: %s", e)
+            fig_freq_shift_individual = self.create_freq_shift_individual_plot(sample_ids)
+            if fig_freq_shift_individual.data:
+                figures['Individual Nucleotide Frequency Shifts'] = fig_freq_shift_individual
+        except (ValueError, KeyError, AttributeError) as e:
+            logger.warning("Failed to create individual frequency shift plot: %s", e)
+
+        # Depth plots by reference
+        try:
+            fig_depth_by_ref = self.create_depth_plots_by_reference(sample_ids)
+            if fig_depth_by_ref.data:
+                figures['Depth Coverage by Reference'] = fig_depth_by_ref
+        except (ValueError, KeyError, AttributeError) as e:
+            logger.warning("Failed to create depth plots by reference: %s", e)
 
         # Segment-specific plots (try common segments)
         for segment in ['L', 'S']:
@@ -384,7 +604,7 @@ class CoverageVisualizations:
                 fig_segment = self.create_segment_specific_plots(segment, sample_ids)
                 if fig_segment.data:
                     figures[f'{segment} Segment Coverage'] = fig_segment
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError) as e:
                 logger.warning("Failed to create %s segment plot: %s", segment, e)
 
         return figures

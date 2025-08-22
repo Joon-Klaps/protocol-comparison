@@ -182,16 +182,6 @@ class CoverageTab:
                             'data': segments
                         })
 
-                # Get depth statistics
-                depth_stats = self.components['coverage']['stats'].calculate_depth_stats(sample_ids)
-                if depth_stats:
-                    for species, segments in depth_stats.items():
-                        summary['sections'].append({
-                            'title': f'Depth Statistics - {species}',
-                            'type': 'species_breakdown',
-                            'data': segments
-                        })
-
             except Exception as e:
                 logger.error("Error generating coverage stats: %s", e)
 
@@ -325,24 +315,6 @@ class CoverageTab:
                         'type': 'dataframe'
                     })
 
-            # Get depth statistics as DataFrame
-            depth_stats = self.components['coverage']['stats'].calculate_depth_stats(sample_ids)
-            if depth_stats:
-                # Flatten nested dictionary to DataFrame
-                flat_depth_stats = []
-                for species, segments in depth_stats.items():
-                    for segment, stats in segments.items():
-                        row = {'species': species, 'segment': segment}
-                        row.update(stats)
-                        flat_depth_stats.append(row)
-
-                if flat_depth_stats:
-                    depth_df = pd.DataFrame(flat_depth_stats)
-                    data['tables'].append({
-                        'title': 'Coverage Depth Statistics',
-                        'data': depth_df,
-                        'type': 'dataframe'
-                    })
 
         except Exception as e:
             logger.error("Error getting coverage raw data: %s", e)
