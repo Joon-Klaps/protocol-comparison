@@ -43,7 +43,7 @@ class CoverageSummaryStats:
         else:
             self.data_manager = CoverageDataManager(data_path)
             self.data = self.data_manager.load_data()
-            
+
         self.depth_threshold = 10  # Default minimum depth for recovery
 
     def set_depth_threshold(self, threshold: int) -> None:

@@ -362,8 +362,21 @@ def generate_alignments(alignment: Dict, contig_df: pd.DataFrame, mapping_df: pd
 
 
     def filter_paths_by_alignment_names(paths: list, valid_alignment_names: set) -> list:
-        """Filter paths to only include those with valid alignment names."""
-        return [l for l in paths if any(s in str(l) for s in valid_alignment_names)]
+        """Filter paths to only include those with valid alignment names (deduplicated)."""
+        remaining_names = valid_alignment_names.copy()
+        filtered_paths = []
+
+        # Sort paths if you want consistent/predictable selection
+        sorted_paths = sorted(paths)
+
+        for path in sorted_paths:
+            path_str = str(path)
+            for name in list(remaining_names):
+                if name in path_str:
+                    filtered_paths.append(path)
+                    remaining_names.remove(name)
+                    break
+        return filtered_paths
 
     # Step 5: Apply filtering to each alignment category
     result = {}

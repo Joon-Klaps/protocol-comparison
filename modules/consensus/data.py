@@ -183,10 +183,16 @@ class ConsensusDataManager(DataManager):
             return None
 
         try:
-            alignment_data = SeqIO.to_dict(SeqIO.parse(alignment_file, "fasta"))
-            alignment_data = {self._extract_sample_id(key): record for key, record in alignment_data.items()}
-            logger.info("Loaded %d sequences from alignment file %s", len(alignment_data.keys()), alignment_file.name)
-            return alignment_data
+            # Parse sequences and handle duplicates by keeping only the first occurrence
+            sequences = {}
+            for record in SeqIO.parse(alignment_file, "fasta"):
+                key = self._extract_sample_id(record.id)
+                if key not in sequences:
+                    sequences[key] = record
+                else:
+                    logger.debug("Duplicate sequence ID found, keeping first occurrence: %s", record.id)
+            logger.info("Loaded %d sequences from alignment file %s", len(sequences.keys()), alignment_file.name)
+            return sequences
         except Exception as e:
             logger.error("Error loading alignment file %s: %s", alignment_file, e)
             return None
@@ -318,7 +324,7 @@ class ConsensusDataManager(DataManager):
             logger.warning("No sequences found for provided sample IDs")
             return None
 
-        logger.info("Filtered to %d sequences from %d original sequences",
+        logger.debug("Filtered to %d sequences from %d original sequences",
                    len(filtered_alignment), len(alignment_data))
 
         # Remove gap-only columns if requested
@@ -383,7 +389,7 @@ class ConsensusDataManager(DataManager):
                 )
                 filtered_alignment[sample_id] = new_record
 
-            logger.info("Removed gap-only columns: %d -> %d positions",
+            logger.debug("Removed gap-only columns: %d -> %d positions",
                        sequences.shape[1], filtered_sequences.shape[1])
             return filtered_alignment
 
@@ -408,15 +414,12 @@ class ConsensusDataManager(DataManager):
         # Compute pairwise identity
         for i, sample1 in enumerate(sample_ids):
             for j, sample2 in enumerate(sample_ids):
-                if j < i:
-                    identity_matrix[i, j] = self.compute_sequence_identity(alignment[sample1], alignment[sample2])
                 if i == j:
                     identity_matrix[i, j] = 1.0
-                else:
-                    continue
-
-        # Mirror the matrix across diagonal
-        identity_matrix = identity_matrix + identity_matrix.T - np.diag(identity_matrix.diagonal())
+                elif j < i:
+                    val = self.compute_sequence_identity(alignment[sample1], alignment[sample2])
+                    identity_matrix[i, j] = val
+                    identity_matrix[j, i] = val
 
         return identity_matrix
 
@@ -491,7 +494,7 @@ class ConsensusDataManager(DataManager):
             logger.error(f"Error finding most divergent sample: {e}")
             return None
 
-    def get_alignment_summary_stats(self, method: str, species: str, segment: str, sample_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+    def get_alignment_summary_stats(self, tuple_key: Tuple[str, str, str], sample_ids: List[str]) -> Dict[str, Any]:
         """
         Get summary statistics for an alignment.
 
@@ -504,14 +507,8 @@ class ConsensusDataManager(DataManager):
         Returns:
             Dictionary with alignment statistics
         """
-        alignment_data = self.get_alignment_data_for(method, species, segment)
-        if not alignment_data:
-            return {}
-
-        # Filter by sample_ids if provided
-        if sample_ids:
-            alignment_data = {sid: record for sid, record in alignment_data.items() if sid in sample_ids}
-
+        method, species, segment = tuple_key
+        alignment_data = self.filter_alignment_by_samples(method, species, segment, sample_ids=sample_ids)
         if not alignment_data:
             return {}
 
@@ -520,14 +517,16 @@ class ConsensusDataManager(DataManager):
         alignment_length = len(first_seq.seq)
         num_samples = len(alignment_data)
 
+        most_divergent = "NA"
         # Find most divergent sample
-        most_divergent = self.get_most_divergent_sample(method, species, segment, list(alignment_data.keys()))
+        if len(alignment_data.keys()) > 2:
+            most_divergent = self.get_most_divergent_sample(method, species, segment, list(alignment_data.keys()))
+
 
         return {
-            'alignment_length': alignment_length,
-            'num_samples': num_samples,
-            'most_divergent_sample': most_divergent,
-            'combination': (method, species, segment)
+            'Alignment Length': alignment_length,
+            'Number of Samples': num_samples,
+            'Most Divergent Sample': most_divergent,
         }
 
 

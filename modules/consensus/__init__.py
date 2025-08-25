@@ -38,33 +38,29 @@ class ConsensusAnalyzer:
         # Initialize modular components with new structure
         self.data_manager = ConsensusDataManager(self.data_path)
         self.consensus_tab = ConsensusTab(self.data_path)
-        self.consensus_viz = ConsensusVisualizations(self.data_path)
+        self.consensus_viz = ConsensusVisualizations(self.data_manager)
 
     def get_available_alignments(self):
         """Get available alignment keys."""
         return self.consensus_tab.get_available_alignments()
 
-    def get_available_samples(self, selected_key=None):
+    def get_available_samples(self):
         """Get list of available samples."""
-        if selected_key is None:
-            # Return all available alignments for backward compatibility
-            return self.get_available_alignments()
-        return self.consensus_tab.get_available_samples(selected_key)
+        return self.consensus_tab.get_available_samples()
 
-    def calculate_summary_stats(self, selected_keys, sample_ids=None):
-        """Calculate summary statistics for selected alignments."""
-        return self.consensus_tab.get_summary_stats(selected_keys, sample_ids)
+    def get_summary_stats(self, sample_ids=None):
+        """Get summary statistics for consensus analysis."""
+        return self.consensus_tab.get_summary_stats(sample_ids)
 
-    def get_visualizations(self, selected_key, sample_ids=None):
-        """Get visualizations for a specific alignment."""
-        return self.consensus_tab.get_visualizations(selected_key, sample_ids)
+    def get_visualizations(self, sample_ids=None):
+        """Get visualizations for consensus analysis."""
+        return self.consensus_tab.get_visualizations(sample_ids)
 
-    def run_analysis(self, selected_keys, sample_ids=None):
+    def run_analysis(self, sample_ids=None):
         """
         Run complete consensus analysis workflow.
 
         Args:
-            selected_keys: List of (method, species, segment) tuples
             sample_ids: Optional list of sample IDs to analyze
 
         Returns:
@@ -77,19 +73,15 @@ class ConsensusAnalyzer:
         }
 
         # Get summary statistics
-        results['summary_stats'] = self.calculate_summary_stats(selected_keys, sample_ids)
+        results['summary_stats'] = self.get_summary_stats(sample_ids)
 
-        # Get visualizations for each selected key
-        for key in selected_keys:
-            results['visualizations'][key] = self.get_visualizations(key, sample_ids)
+        # Get visualizations
+        results['visualizations'] = self.get_visualizations(sample_ids)
 
         # Get available data info
         results['available_data'] = {
             'alignments': self.get_available_alignments(),
-            'samples_per_alignment': {
-                key: self.consensus_tab.get_available_samples(key)
-                for key in selected_keys
-            }
+            'samples': self.get_available_samples()
         }
 
         return results

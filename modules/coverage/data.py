@@ -229,7 +229,7 @@ class CoverageDataManager(DataManager):
             Dictionary of DataFrames for the sample (or single DataFrame if reference specified)
         """
         if sample_id not in self.data:
-            logger.warning("Sample %s not found in coverage data", sample_id)
+            logger.debug("Sample %s not found in coverage data", sample_id)
             return {}
 
         sample_data = self.data[sample_id]
@@ -238,7 +238,7 @@ class CoverageDataManager(DataManager):
             if reference in sample_data:
                 return {reference: sample_data[reference]}
             else:
-                logger.warning("Reference %s not found for sample %s", reference, sample_id)
+                logger.debug("Reference %s not found for sample %s", reference, sample_id)
                 return {}
 
         return sample_data
