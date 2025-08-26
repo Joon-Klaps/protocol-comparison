@@ -216,6 +216,9 @@ class MappingVisualizations:
         """
         Create interactive UMI mapping plot for a specific species with button controls for UMI metrics.
 
+        Displays UMI-related statistics including deduplicated reads, total UMIs, unique UMIs,
+        and estimated PCR cycles. PCR cycles are calculated as: Total UMIs / Unique UMIs.
+
         Args:
             species: Species to visualize
             sample_ids: Optional list of sample IDs to visualize

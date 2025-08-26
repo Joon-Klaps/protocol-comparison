@@ -75,9 +75,9 @@ class ConsensusVisualizations:
         try:
             sequences = [seq for seq in alignment_data.values()]
             # Create AlignmentChart component
-            fig = AlignmentViewer.get_alignment_plotly(
+            fig = AlignmentViewer.get_alignment_html(
                 sequences,
-                show_consensus=True,
+                # show_consensus=True,
             )
 
 
@@ -197,7 +197,7 @@ class ConsensusVisualizations:
                 'title': f"Multiple Sequence Alignment - {selected_key[0]} {selected_key[1]} {selected_key[2]}",
                 'description': 'Interactive alignment of consensus sequences.',
                 'figure': alignment_fig,
-                'type': 'plotly'
+                'type': 'html'
             })
 
         # Identity clustergram

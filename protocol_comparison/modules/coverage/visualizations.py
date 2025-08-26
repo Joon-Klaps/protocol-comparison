@@ -54,55 +54,6 @@ class CoverageVisualizations:
         self.depth_threshold = threshold
         self.stats.set_depth_threshold(threshold)
 
-    def create_coverage_overlay_plot(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
-        """
-        Create coverage overlay plot showing all samples on one plot.
-
-        Args:
-            sample_ids: Optional list of sample IDs to visualize
-
-        Returns:
-            Plotly figure with coverage overlay
-        """
-        if not sample_ids:
-            sample_ids = self.data_manager.get_available_samples()
-
-        fig = make_subplots(
-            rows=1, cols=1,
-            subplot_titles=['Coverage Overlay Plot']
-        )
-
-        colors = px.colors.qualitative.Set1
-
-        for i, sample_id in enumerate(sample_ids[:10]):  # Limit to 10 samples for readability
-            sample_data = self.data_manager.get_sample_data(sample_id)
-
-            if sample_data:
-                color = colors[i % len(colors)]
-
-                for reference, coverage_df in sample_data.items():
-                    if 'depth' in coverage_df.columns and 'position' in coverage_df.columns:
-                        fig.add_trace(
-                            go.Scatter(
-                                x=coverage_df['position'],
-                                y=coverage_df['depth'],
-                                mode='lines',
-                                name=f'{sample_id}_{reference}',
-                                line=dict(color=color),
-                                opacity=0.7
-                            )
-                        )
-
-        fig.update_layout(
-            title='Coverage Overlay Plot',
-            xaxis_title='Position',
-            yaxis_title='Depth',
-            height=600,
-            showlegend=True
-        )
-
-        return fig
-
     def create_recovery_stats_plot(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
         """
         Create recovery statistics bar plot.
@@ -196,10 +147,10 @@ class CoverageVisualizations:
         )
 
         for i, (ref, df) in enumerate(sample_data.items()):
-            if 'depth' in df.columns and 'position' in df.columns:
+            if 'depth' in df.columns and 'POS' in df.columns:
                 fig.add_trace(
                     go.Scatter(
-                        x=df['position'],
+                        x=df['POS'],
                         y=df['depth'],
                         mode='lines',
                         name=f'{ref}',
@@ -271,7 +222,7 @@ class CoverageVisualizations:
                 continue
 
             # Ensure we have the required columns
-            required_cols = ['Position', 'sdA', 'sdC', 'sdG', 'sdT']
+            required_cols = ['POS', 'sdA', 'sdC', 'sdG', 'sdT']
             missing_cols = [col for col in required_cols if col not in sd_df.columns]
             if missing_cols:
                 logger.warning("Missing required columns %s in frequency shift data for reference %s",
@@ -282,7 +233,7 @@ class CoverageVisualizations:
             for nucleotide, color in nucleotide_colors.items():
                 fig.add_trace(
                     go.Scatter(
-                        x=sd_df['Position'],
+                        x=sd_df['POS'],
                         y=sd_df[nucleotide],
                         mode='lines',
                         name=f'{nucleotide[-1]} ({reference})',  # Extract nucleotide letter
@@ -359,10 +310,10 @@ class CoverageVisualizations:
 
             # Find the reference for this segment
             for reference, df in sample_data.items():
-                if segment.upper() in reference.upper() and 'depth' in df.columns and 'position' in df.columns:
+                if segment.upper() in reference.upper() and 'depth' in df.columns and 'POS' in df.columns:
                     fig.add_trace(
                         go.Scatter(
-                            x=df['position'],
+                            x=df['POS'],
                             y=df['depth'],
                             mode='lines',
                             name=f'{sample_id}',
@@ -486,8 +437,13 @@ class CoverageVisualizations:
                     df = sample_data[reference]
 
                     # Check if required columns exist
-                    if 'Position' not in df.columns or 'depth' not in df.columns:
-                        logger.warning("Missing Position or depth columns for sample %s, reference %s",
+                    if 'POS' not in df.columns:
+                        logger.warning("Missing POS column for sample %s, reference %s",
+                                     sample_id, reference)
+                        continue
+
+                    if 'depth' not in df.columns:
+                        logger.warning("Missing depth columns for sample %s, reference %s",
                                      sample_id, reference)
                         continue
 
@@ -503,7 +459,7 @@ class CoverageVisualizations:
 
                     fig.add_trace(
                         go.Scatter(
-                            x=df_filtered['Position'],
+                            x=df_filtered['POS'],
                             y=df_filtered['depth'],
                             mode='lines',
                             name=f'{sample_id}',
@@ -566,13 +522,13 @@ class CoverageVisualizations:
         """
         figures = {}
 
-        # Coverage overlay plot
-        try:
-            fig_overlay = self.create_coverage_overlay_plot(sample_ids)
-            if fig_overlay.data:  # Only add if figure has data
-                figures['Coverage Overlay Plot'] = fig_overlay
-        except (ValueError, KeyError, AttributeError) as e:
-            logger.warning("Failed to create coverage overlay plot: %s", e)
+        # Coverage overlay plot - method not implemented yet
+        # try:
+        #     fig_overlay = self.create_coverage_overlay_plot(sample_ids)
+        #     if fig_overlay.data:  # Only add if figure has data
+        #         figures['Coverage Overlay Plot'] = fig_overlay
+        # except (ValueError, KeyError, AttributeError) as e:
+        #     logger.warning("Failed to create coverage overlay plot: %s", e)
 
         # Recovery statistics bar plot
         try:

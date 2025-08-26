@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Union, List
 from tqdm import tqdm
+import numpy as np
 
 def load_excel(file_path: Path, sheet_name: str, **kwargs) -> pd.DataFrame:
     """
@@ -68,7 +69,7 @@ def extract_mapping(file_path: Path) -> pd.DataFrame:
 
     # Calculate estimated PCR cycles: Total UMIs ÷ Unique UMIs
     # This represents the average number of copies of each read (amplification level)
-    mapping_stats["(umitools) estimated PCR cycles"] = (
+    mapping_stats["(umitools) estimated PCR cycles"] = np.log2(
         pd.to_numeric(mapping_stats["(umitools) total UMIs"], errors="coerce") /
         pd.to_numeric(mapping_stats["(umitools) unique UMIs"], errors="coerce")
     )
@@ -200,6 +201,8 @@ def extract_custom_vcf(file_path: Path) -> pd.DataFrame:
     """
     df = pd.read_csv(file_path, sep='\t')
     df["depth"] = df["A"] + df["C"] + df["G"] + df["T"]
+    if 'Position' in df.columns:
+        df = df.rename(columns={"Position": "POS"})
 
     # Use vectorized division
     df['freqA'] = df['A'] / df['depth']
@@ -240,7 +243,7 @@ def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path], Dict]]:
     else:
         logging.warning("No comparison Excel files found in %s", comparison_excels)
 
-    if custom_vcfs := [f for f in viralmetagenome.rglob("*/custom-vcf/*/*_constraint.vcf.tsv") if "seqruns-collapsed" not in str(f)]:
+    if custom_vcfs := [f for f in viralmetagenome.rglob("1-6-only-mapping-mapdedup/custom-vcf/*/*_constraint.vcf.tsv") if "seqruns-collapsed" not in str(f)]:
         logging.info("Found custom VCF file: %s", custom_vcfs[0])
         locations["custom_vcfs"] = custom_vcfs
     else:
@@ -306,7 +309,7 @@ def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path], Dict]]:
     if seq_all := [f for f in viralmetagenome.rglob("*.consensus.fasta") if "seqruns-collapsed" not in str(f)]:
         logging.info("Found de sequence files: %s", len(seq_all))
         hazv_seq_all = [f for f in seq_all if "it2" in str(f)]
-        mapping_seq_all = [f for f in seq_all if "constraint" in str(f)]
+        mapping_seq_all = [f for f in seq_all if "constraint" in str(f) and 'only-mapping-mapdedup' in str(f)]
         locations["alignment"]["denovo"]["HAZV"] = {
             "L": hazv_seq_all, "S": hazv_seq_all, "M": hazv_seq_all
         }
@@ -320,7 +323,7 @@ def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path], Dict]]:
     return locations
 
 
-def generate_alignments(alignment: Dict, contig_df: pd.DataFrame, mapping_df: pd.DataFrame, output_dir: Path):
+def generate_alignments(alignment: Dict, contig_df: pd.DataFrame, mapping_df: pd.DataFrame, output_dir: Path, force: bool):
     """Extract alignment data from FASTA files."""
 
     BLACKLIST_SAMPLES = ["LVE00288", "LVE00290", "LVE00385"]
@@ -426,9 +429,9 @@ def generate_alignments(alignment: Dict, contig_df: pd.DataFrame, mapping_df: pd
                     result["mapping"]["HAZV"][segment] = filtered_paths
                     logging.debug(f"HAZV mapping {segment}: {len(filtered_paths)} files from {len(mapping['HAZV'][segment])} total")
 
-    return align_sequences(result, output_dir)
+    return align_sequences(result, output_dir, force=force)
 
-def align_sequences(data: Dict, output_dir: Path):
+def align_sequences(data: Dict, output_dir: Path, force: bool):
     """Recursively align sequences using MAFFT."""
     logging.info("Starting sequence alignment")
 
@@ -459,7 +462,7 @@ def align_sequences(data: Dict, output_dir: Path):
 
         return input_names == output_names
 
-    def process_item(item, path_parts=None):
+    def process_item(item, path_parts=None, force=False):
         if path_parts is None:
             path_parts = []
 
@@ -483,7 +486,7 @@ def align_sequences(data: Dict, output_dir: Path):
                             temp_f.write('\n')
 
             # Check if output already exists and contains the same sequences
-            if sequences_match(temp_input, output_file):
+            if sequences_match(temp_input, output_file) and not force:
                 logging.info(f"Output file {output_file} already exists with matching sequences, skipping alignment")
                 temp_input.unlink()  # Clean up temporary file
                 return output_file
@@ -499,14 +502,14 @@ def align_sequences(data: Dict, output_dir: Path):
 
         elif isinstance(item, dict):
             # Recursively process dictionary
-            return {key: process_item(value, path_parts + [key])
+            return {key: process_item(value, path_parts + [key], force)
                    for key, value in item.items()}
 
         else:
             # Single file, return as-is
             return item
 
-    return process_item(data)
+    return process_item(data, force=force)
 
 def write_dfs(output_dfs: Dict[str, pd.DataFrame], output_dir: Path) -> None:
     """
@@ -580,7 +583,7 @@ def main(cli_args: argparse.Namespace) -> int:
     "contigs" in output_dfs and not output_dfs["contigs"].empty):
         alignment_data = locations["alignment"]
         if isinstance(alignment_data, dict):
-            alignments = generate_alignments(alignment_data, output_dfs["contigs"], output_dfs["mapping"], output_dir=Path(cli_args.output_dir) / "alignments")
+            alignments = generate_alignments(alignment_data, output_dfs["contigs"], output_dfs["mapping"], output_dir=Path(cli_args.output_dir) / "alignments", force=cli_args.force_alignment)
             logging.info("Alignment completed")
 
     if output_dfs:
@@ -606,6 +609,13 @@ if __name__ == "__main__":
         type=str,
         default="/Users/joonklaps/Desktop/School/PhD/projects/LVE-BE002-PIPELINE/LVE-BE02-Supplmentary/results/HPC-results/TMP-RUN001-004/inrahost-analysis/data/app",
         help="Output directory for converted files"
+    )
+    parser.add_argument(
+        "--force-alignment",
+        "-f",
+        action="store_true",
+        default=False,
+        help="Force re-alignment of sequences even if output files already exist"
     )
     parser.add_argument(
         "--log-level",

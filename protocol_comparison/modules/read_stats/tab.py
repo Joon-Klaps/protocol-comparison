@@ -163,7 +163,7 @@ class ReadStatsTab:
                         if fig and fig.data:
                             figures['figures'].append({
                                 'title': title,
-                                'description': f'Mapping analysis: {title.lower()}',
+                                'description': f'Mapping analysis: {title.lower()}' if "UMI" not in title else 'UMI statistics, PCR cycles are calculated as: log_2(Total UMIs / Unique UMIs)',
                                 'figure': fig,
                                 'type': 'plotly'
                             })

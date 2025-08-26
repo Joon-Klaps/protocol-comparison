@@ -283,8 +283,8 @@ class CoverageDataManager(DataManager):
             logger.warning("Depth column not found in DataFrame for %s, %s", sample_id, reference)
             return 0.0
 
-        # Get final Position value
-        total_positions = df['Position'].iloc[-1]
+        # Get final POS value
+        total_positions = df['POS'].iloc[-1]
         recovered_positions = (df['depth'] >= depth_threshold).sum()
 
         if total_positions == 0:
@@ -356,7 +356,7 @@ class CoverageDataManager(DataManager):
 
         Returns:
             Dictionary with DataFrames containing frequency standard deviation data for each reference.
-            Each DataFrame contains columns: 'sdA', 'sdC', 'sdG', 'sdT', 'sum' with Position column.
+            Each DataFrame contains columns: 'sdA', 'sdC', 'sdG', 'sdT', 'sum' with POS column.
 
         Raises:
             ValueError: If required columns are missing from the data
@@ -376,11 +376,11 @@ class CoverageDataManager(DataManager):
                         df = sample_data[ref].copy()
 
                         # Ensure required columns exist
-                        required_cols = ['Position', 'freqA', 'freqC', 'freqG', 'freqT']
+                        required_cols = ['POS', 'freqA', 'freqC', 'freqG', 'freqT']
                         if not all(col in df.columns for col in required_cols):
                             raise ValueError(f"Missing required columns in data for sample {sample_id} and reference {ref}")
 
-                        df = df.set_index('Position')[['freqA', 'freqC', 'freqG', 'freqT']]
+                        df = df.set_index('POS')[['freqA', 'freqC', 'freqG', 'freqT']]
                         df.columns = [f'{col}_{sample_id}' for col in df.columns]
                         dfs_to_concat.append(df)
                         valid_sample_ids.append(sample_id)
@@ -396,13 +396,13 @@ class CoverageDataManager(DataManager):
                 # Step 3: Reshape the data for easy standard deviation calculation
                 # Use `stack` to move sample-specific columns into rows, creating a multi-index
                 stacked_df = combined_df.stack().reset_index()
-                stacked_df.columns = ['Position', 'variable', 'value']
+                stacked_df.columns = ['POS', 'variable', 'value']
 
                 # Step 4: Extract the nucleotide type from the 'variable' column
                 stacked_df['nucleotide'] = stacked_df['variable'].str.extract(r'freq(.)_')
 
-                # Step 5: Group by Position and Nucleotide, then calculate std
-                sd_df = stacked_df.groupby(['Position', 'nucleotide'])['value'].std().unstack()
+                # Step 5: Group by POS and Nucleotide, then calculate std
+                sd_df = stacked_df.groupby(['POS', 'nucleotide'])['value'].std().unstack()
 
                 # Step 6: Clean up and calculate the sum
                 sd_df.columns = [f'sd{col}' for col in sd_df.columns]

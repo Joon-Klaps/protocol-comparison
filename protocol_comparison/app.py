@@ -7,6 +7,7 @@ All Streamlit UI code is contained here - modules return pure data/visualization
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import sys
 import os
 from pathlib import Path
@@ -18,8 +19,13 @@ import time
 # Add the current directory to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Handle imports - try relative first, then absolute
+try:
+    from .sample_selection import SampleSelectionManager
+except ImportError:
+    from sample_selection import SampleSelectionManager
+
 # Import our custom modules
-from sample_selection import SampleSelectionManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -278,38 +284,18 @@ def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]
                     if 'coverage_depth_threshold' not in st.session_state:
                         st.session_state.coverage_depth_threshold = 10
 
-                    # Coverage depth threshold controls
-                    col1, col2 = st.columns([2, 1])
 
-                    with col1:
-                        # Slider control (no callback)
-                        slider_value = st.slider(
-                            "Min Depth Threshold",
-                            min_value=1,
-                            max_value=500,
-                            value=st.session_state.coverage_depth_threshold,
-                            step=1,
-                            help="Minimum depth required to consider a genomic position as 'recovered'",
-                            key="coverage_depth_slider"
-                        )
+                    number_value = st.number_input(
+                        "Exact Value",
+                        min_value=1,
+                        max_value=10000,
+                        value=st.session_state.coverage_depth_threshold,
+                        step=1,
+                        help="Type exact depth threshold",
+                        key="coverage_depth_number"
+                    )
 
-                    with col2:
-                        # Number input control (no callback)
-                        number_value = st.number_input(
-                            "Exact Value",
-                            min_value=1,
-                            max_value=500,
-                            value=st.session_state.coverage_depth_threshold,
-                            step=1,
-                            help="Type exact depth threshold",
-                            key="coverage_depth_number"
-                        )
-
-                    # Simple synchronization: update session state if either control changed
-                    # Only update if the value actually changed to avoid unnecessary updates
-                    if slider_value != st.session_state.coverage_depth_threshold:
-                        st.session_state.coverage_depth_threshold = slider_value
-                    elif number_value != st.session_state.coverage_depth_threshold:
+                    if number_value != st.session_state.coverage_depth_threshold:
                         st.session_state.coverage_depth_threshold = number_value
 
                     # Display current setting
@@ -421,6 +407,7 @@ def render_visualizations(viz_data: Dict[str, Any]):
         title = fig_data.get('title', 'Visualization')
         description = fig_data.get('description', '')
         figure = fig_data.get('figure')
+        fig_type = fig_data.get('type', 'plotly')  # Default to plotly
 
         st.subheader(title)
         if description:
@@ -428,9 +415,24 @@ def render_visualizations(viz_data: Dict[str, Any]):
 
         if figure:
             try:
-                st.plotly_chart(figure, use_container_width=True)
+                if fig_type == 'html':
+                    # Render HTML content using components
+                    components.html(figure, height=400, scrolling=True)
+                elif fig_type == 'plotly':
+                    # Render Plotly chart
+                    st.plotly_chart(figure, use_container_width=True)
+                else:
+                    # Try plotly as fallback
+                    st.plotly_chart(figure, use_container_width=True)
             except Exception as e:
-                st.error(f"Error displaying visualization: {str(e)}")
+                st.error(f"Error displaying visualization ({fig_type}): {str(e)}")
+                # Show debug info
+                with st.expander("Debug Information"):
+                    st.write(f"Figure type: {fig_type}")
+                    st.write(f"Figure object type: {type(figure)}")
+                    if isinstance(figure, str):
+                        st.write(f"HTML content length: {len(figure)} characters")
+                    st.write(f"Error: {str(e)}")
 
 
 def render_custom_html(html_data: Dict[str, Any]):
@@ -440,13 +442,13 @@ def render_custom_html(html_data: Dict[str, Any]):
     Args:
         html_data: Custom HTML data from tab component
     """
-    components = html_data.get('components', [])
+    html_components = html_data.get('components', [])
 
-    if not components:
+    if not html_components:
         st.info("No custom components available")
         return
 
-    for component in components:
+    for component in html_components:
         title = component.get('title', 'Custom Component')
         description = component.get('description', '')
         html_content = component.get('html', '')
@@ -457,7 +459,7 @@ def render_custom_html(html_data: Dict[str, Any]):
 
         if html_content:
             try:
-                st.components.v1.html(html_content, height=400, scrolling=True)
+                components.html(html_content, height=400, scrolling=True)
             except Exception as e:
                 st.error(f"Error displaying custom HTML: {str(e)}")
 

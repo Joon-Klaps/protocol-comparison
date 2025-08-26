@@ -11,3 +11,4 @@ sample_data/
 data/app/
 __pycache__/
 dashboard.log
+*.egg-info/
