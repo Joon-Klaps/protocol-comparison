@@ -77,6 +77,7 @@ class ConsensusVisualizations:
             # Create AlignmentChart component
             fig = AlignmentViewer.get_alignment_html(
                 sequences,
+                color_snps_only=True,
                 # show_consensus=True,
             )
 
