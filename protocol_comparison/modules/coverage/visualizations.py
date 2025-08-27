@@ -85,7 +85,7 @@ class CoverageVisualizations:
             for reference, recovery_value in ref_data.items():
                 plot_data.append({
                     'sample_id': sample_id,
-                    'reference': reference,
+                    'reference': f"{reference} - {' '.join(self.data_manager.get_species_segment_for_reference(reference).values())}",
                     'recovery_percentage': recovery_value * 100
                 })
 
@@ -178,7 +178,13 @@ class CoverageVisualizations:
             Plotly figure with individual nucleotide frequency shift plots
         """
         if sample_ids is None:
-            sample_ids = self.data_manager.get_available_samples()
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No samples selected, please select samples",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return fig
 
         # Get frequency shift data
         freq_shift_data = self.data_manager.get_frequency_sd_data(sample_ids)
@@ -205,7 +211,7 @@ class CoverageVisualizations:
 
         fig = make_subplots(
             rows=len(references), cols=1,
-            subplot_titles=[f'{ref} - Individual Nucleotide Frequency Shifts' for ref in references],
+            subplot_titles=[f'{ref} - {' '.join(self.data_manager.get_species_segment_for_reference(ref).values())}' for ref in references],
             shared_xaxes=False,  # Independent x-axes
             vertical_spacing=0.20
         )
@@ -236,7 +242,7 @@ class CoverageVisualizations:
                         x=sd_df['POS'],
                         y=sd_df[nucleotide],
                         mode='lines',
-                        name=f'{nucleotide[-1]} ({reference})',  # Extract nucleotide letter
+                        name=f'{nucleotide[-1]}',  # Extract nucleotide letter
                         line=dict(color=color, width=2),
                         hovertemplate=f'<b>{nucleotide[-1]} - {reference}</b><br>' +
                                     'Position: %{x}<br>' +
@@ -265,7 +271,7 @@ class CoverageVisualizations:
 
         return fig
 
-    def create_segment_specific_plots(self, segment: str, sample_ids: Optional[List[str]] = None) -> go.Figure:
+    def create_species_segment_specific_plots(self, species:str, segment: str, sample_ids: Optional[List[str]] = None) -> go.Figure:
         """
         Create segment-specific coverage plots.
 
@@ -277,117 +283,65 @@ class CoverageVisualizations:
             Plotly figure for the segment
         """
         if not sample_ids:
-            return go.Figure()
-
-        # Filter samples that have data for this segment
-        valid_samples = []
-        for sample_id in sample_ids:
-            sample_data = self.data_manager.get_sample_data(sample_id)
-            # Look for references containing the segment
-            for reference in sample_data.keys():
-                if segment.upper() in reference.upper():
-                    valid_samples.append(sample_id)
-                    break
-
-        if not valid_samples:
             fig = go.Figure()
             fig.add_annotation(
-                text=f"No coverage data available for segment {segment}",
+                text="No samples selected, please select samples",
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False
             )
             return fig
 
+        # Get references for this segment using annotation data
+        references = self.data_manager.get_references_for_species_segment(species, segment)
+
+
+        if not references:
+            fig = go.Figure()
+            return fig
+
+        # Filter samples that have data for any of the segment's references
+        valid_samples = []
+        sample_reference_map = {}
+        for sample_id in sample_ids:
+            sample_data = self.data_manager.get_sample_data(sample_id)
+            for ref in references:
+                if ref in sample_data:
+                    valid_samples.append(sample_id)
+                    sample_reference_map[sample_id] = ref
+                    break
+
+        if not valid_samples:
+            fig = go.Figure()
+            return fig
+
         # Create subplot for each sample
         fig = make_subplots(
             rows=len(valid_samples), cols=1,
-            subplot_titles=[f'{sample_id} - {segment} segment' for sample_id in valid_samples],
+            subplot_titles=[f'{sample_id}, {species} - {segment} ({sample_reference_map[sample_id]})' for sample_id in valid_samples],
             shared_xaxes=True
         )
 
         for i, sample_id in enumerate(valid_samples):
-            sample_data = self.data_manager.get_sample_data(sample_id)
+            reference = sample_reference_map[sample_id]
+            sample_data = self.data_manager.get_sample_data(sample_id, reference)
+            df = sample_data[reference]
 
-            # Find the reference for this segment
-            for reference, df in sample_data.items():
-                if segment.upper() in reference.upper() and 'depth' in df.columns and 'POS' in df.columns:
-                    fig.add_trace(
-                        go.Scatter(
-                            x=df['POS'],
-                            y=df['depth'],
-                            mode='lines',
-                            name=f'{sample_id}',
-                            line=dict(width=2)
-                        ),
-                        row=i+1, col=1
-                    )
-                    break
+            fig.add_trace(
+                go.Scatter(
+                    x=df['POS'],
+                    y=df['depth'],
+                    mode='lines',
+                    name=f'{sample_id}',
+                    line=dict(width=2)
+                ),
+                row=i+1, col=1
+            )
 
         fig.update_layout(
             title=f'Coverage Plots - {segment} Segment',
             height=200 * len(valid_samples),
             showlegend=True
         )
-
-        return fig
-
-    def create_coverage_heatmap(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
-        """
-        Create coverage recovery percentage heatmap.
-
-        Args:
-            sample_ids: Optional list of sample IDs to visualize
-
-        Returns:
-            Plotly figure with coverage heatmap
-        """
-        # Get recovery data
-        recovery_data = self.data_manager.get_recovery_data(sample_ids, self.depth_threshold)
-
-        if not recovery_data:
-            fig = go.Figure()
-            fig.add_annotation(
-                text="No recovery data available",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5, showarrow=False
-            )
-            return fig
-
-        # Convert to DataFrame and pivot for heatmap
-        plot_data = []
-        for sample_id, ref_data in recovery_data.items():
-            for reference, recovery_value in ref_data.items():
-                plot_data.append({
-                    'sample_id': sample_id,
-                    'reference': reference,
-                    'recovery_percentage': recovery_value * 100
-                })
-
-        if not plot_data:
-            fig = go.Figure()
-            fig.add_annotation(
-                text="No valid recovery data for heatmap",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5, showarrow=False
-            )
-            return fig
-
-        recovery_df = pd.DataFrame(plot_data)
-
-        # Pivot to create matrix format
-        heatmap_data = recovery_df.pivot(
-            index='sample_id',
-            columns='reference',
-            values='recovery_percentage'
-        )
-
-        fig = px.imshow(
-            heatmap_data,
-            title=f'Genome Recovery Percentage Heatmap (min depth: {self.depth_threshold}x)',
-            labels=dict(x='Reference', y='Sample', color='Recovery (%)'),
-            color_continuous_scale='viridis'
-        )
-        fig.update_layout(height=600)
 
         return fig
 
@@ -402,7 +356,13 @@ class CoverageVisualizations:
             Plotly figure with depth plots organized by reference
         """
         if sample_ids is None:
-            sample_ids = self.data_manager.get_available_samples()
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No samples selected, please select samples",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return fig
 
         # Get all available references
         references = self.data_manager.get_available_references(sample_ids)
@@ -419,13 +379,13 @@ class CoverageVisualizations:
         # Create subplots for each reference
         fig = make_subplots(
             rows=len(references), cols=1,
-            subplot_titles=[f'{ref} - Depth Coverage' for ref in references],
+            subplot_titles=[f'{ref} - {' '.join(self.data_manager.get_species_segment_for_reference(ref).values())}' for ref in references],
             shared_xaxes=False,  # Independent x-axes
             vertical_spacing=0.20
         )
 
         # Generate colors for samples
-        colors = px.colors.qualitative.Set3 + px.colors.qualitative.Pastel + px.colors.qualitative.Set1
+        colors = px.colors.qualitative.Set1
 
         for row_idx, reference in enumerate(references):
             sample_count = 0
@@ -482,8 +442,7 @@ class CoverageVisualizations:
                     line_color="red",
                     line_width=2,
                     annotation_text=f"Depth Threshold: {self.depth_threshold}x",
-                    annotation_position="top right",
-                    row=row_idx + 1, col=1
+                    annotation_position="top right"
                 )
 
         # Update layout
@@ -533,7 +492,7 @@ class CoverageVisualizations:
         # Recovery statistics bar plot
         try:
             fig_recovery = self.create_recovery_stats_plot(sample_ids)
-            if fig_recovery.data:
+            if fig_recovery.data or fig_recovery.layout.annotations:
                 figures['Genome Recovery Statistics'] = fig_recovery
         except (ValueError, KeyError, AttributeError) as e:
             logger.warning("Failed to create recovery stats plot: %s", e)
@@ -541,7 +500,7 @@ class CoverageVisualizations:
         # Frequency shift plots - Individual nucleotides
         try:
             fig_freq_shift_individual = self.create_freq_shift_individual_plot(sample_ids)
-            if fig_freq_shift_individual.data:
+            if fig_freq_shift_individual.data or fig_freq_shift_individual.layout.annotations:
                 figures['Individual Nucleotide Frequency Shifts'] = fig_freq_shift_individual
         except (ValueError, KeyError, AttributeError) as e:
             logger.warning("Failed to create individual frequency shift plot: %s", e)
@@ -549,18 +508,19 @@ class CoverageVisualizations:
         # Depth plots by reference
         try:
             fig_depth_by_ref = self.create_depth_plots_by_reference(sample_ids)
-            if fig_depth_by_ref.data:
+            if fig_depth_by_ref.data or fig_depth_by_ref.layout.annotations:
                 figures['Depth Coverage by Reference'] = fig_depth_by_ref
         except (ValueError, KeyError, AttributeError) as e:
             logger.warning("Failed to create depth plots by reference: %s", e)
 
         # Segment-specific plots (try common segments)
-        for segment in ['L', 'S']:
-            try:
-                fig_segment = self.create_segment_specific_plots(segment, sample_ids)
-                if fig_segment.data:
-                    figures[f'{segment} Segment Coverage'] = fig_segment
-            except (ValueError, KeyError, AttributeError) as e:
-                logger.warning("Failed to create %s segment plot: %s", segment, e)
+        for species in ['LASV', 'HAZV']:
+            for segment in ['L', 'S', 'M']:
+                try:
+                    fig_segment = self.create_species_segment_specific_plots(species,segment, sample_ids)
+                    if fig_segment.data or fig_segment.layout.annotations:
+                        figures[f'{species} {segment} Segment Coverage'] = fig_segment
+                except (ValueError, KeyError, AttributeError) as e:
+                    logger.warning("Failed to create %s %s segment plot: %s", species, segment, e)
 
         return figures

@@ -40,6 +40,7 @@ dependencies = [
     "pyarrow>=10.0.0",
     "dash-bio>=1.0.0",
     "AlignmentViewer @ git+https://github.com/Joon-Klaps/AlignmentViewer.git@plotly",
+    "pyfamsa>=0.6.0"
 ]
 
 [project.optional-dependencies]

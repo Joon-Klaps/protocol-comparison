@@ -219,7 +219,7 @@ class CoverageTab:
 
             if all_figures:
                 for title, fig in all_figures.items():
-                    if fig and fig.data:
+                    if fig and (fig.data or fig.layout.annotations):
                         figures['figures'].append({
                             'title': title,
                             'description': f'Coverage analysis: {title.lower()} (min depth: {depth_threshold}x)',
@@ -261,7 +261,7 @@ class CoverageTab:
             for sample_id in sample_ids:
                 try:
                     profile_fig = viz_component.create_depth_profile(sample_id)
-                    if profile_fig and profile_fig.data:
+                    if profile_fig and (profile_fig.data or profile_fig.layout.annotations):
                         profiles['profiles'].append({
                             'sample_id': sample_id,
                             'title': f'Depth Profile: {sample_id}',

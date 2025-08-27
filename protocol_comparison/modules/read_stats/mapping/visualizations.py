@@ -425,10 +425,10 @@ class MappingVisualizations:
         species_list = mapping_df['species'].unique()
         for species in species_list:
             mapping_fig = self.create_interactive_mapping_plot(species, sample_ids)
-            if mapping_fig.data:
+            if mapping_fig.data or mapping_fig.layout.annotations:
                 figures[f'Mapping Statistics - {species}'] = mapping_fig
             umi_fig = self.create_interactive_mapping_umi_plot(species, sample_ids)
-            if umi_fig.data:
+            if umi_fig.data or umi_fig.layout.annotations:
                 figures[f'UMI Statistics - {species}'] = umi_fig
 
         return figures

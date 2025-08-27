@@ -70,12 +70,11 @@ class CoverageSummaryStats:
         recovery_records = []
         for sample_id, ref_data in recovery_data.items():
             for reference, recovery_value in ref_data.items():
-                # Parse reference to extract species and segment
-                # Assuming reference format like "LASV_L" or "HAZV_S"
-                ref_parts = reference.split('_')
-                if len(ref_parts) >= 2:
-                    species = ref_parts[0]
-                    segment = ref_parts[1]
+                # Get species and segment information using the data manager
+                species_segment = self.data_manager.get_species_segment_for_reference(reference)
+                if species_segment:
+                    species = species_segment['species']
+                    segment = species_segment['segment']
                 else:
                     species = reference
                     segment = "unknown"
@@ -84,7 +83,7 @@ class CoverageSummaryStats:
                     'sample_id': sample_id,
                     'reference': reference,
                     'species': species,
-                    'segment': segment,
+                    'segment': f"{segment} - {reference}",
                     'recovery_value': recovery_value
                 })
 
@@ -141,11 +140,11 @@ class CoverageSummaryStats:
             sample_data = self.data_manager.get_sample_data(sample_id)
             for reference, df in sample_data.items():
                 if 'depth' in df.columns and not df.empty:
-                    # Parse reference to extract species and segment
-                    ref_parts = reference.split('_')
-                    if len(ref_parts) >= 2:
-                        species = ref_parts[0]
-                        segment = ref_parts[1]
+                    # Get species and segment information using the data manager
+                    species_segment = self.data_manager.get_species_segment_for_reference(reference)
+                    if species_segment:
+                        species = species_segment['species']
+                        segment = species_segment['segment']
                     else:
                         species = reference
                         segment = "unknown"
@@ -154,7 +153,7 @@ class CoverageSummaryStats:
                         'sample_id': sample_id,
                         'reference': reference,
                         'species': species,
-                        'segment': segment,
+                        'segment': f"{segment} - {reference}",
                         'mean_depth': df['depth'].mean(),
                         'median_depth': df['depth'].median(),
                         'max_depth': df['depth'].max(),

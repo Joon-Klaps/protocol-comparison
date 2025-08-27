@@ -168,12 +168,12 @@ class ReadProcessingVisualizations:
 
         # Timeline visualization
         timeline_fig = self.create_processing_timeline(sample_ids)
-        if timeline_fig.data:
+        if timeline_fig.data or timeline_fig.layout.annotations:
             figures['processing_timeline'] = timeline_fig
 
         # Efficiency overview
         efficiency_fig = self.create_efficiency_overview(sample_ids)
-        if efficiency_fig.data:
+        if efficiency_fig.data or efficiency_fig.layout.annotations:
             figures['efficiency_overview'] = efficiency_fig
 
         return figures

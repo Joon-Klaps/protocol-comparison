@@ -43,6 +43,7 @@ class CoverageDataManager(DataManager):
         """
         super().__init__(data_path)
         self.depth_dir = self.data_path / "custom_vcfs"
+        self.annotation = self._load_annotation_data()
 
         # Use cache key based on data path
         self.cache_key = str(self.depth_dir.absolute())
@@ -64,6 +65,43 @@ class CoverageDataManager(DataManager):
             logger.warning("Coverage depth directory does not exist: %s", self.depth_dir)
         elif not self.depth_dir.is_dir():
             raise ValueError(f"Coverage depth path is not a directory: {self.depth_dir}")
+
+    def _load_annotation_data(self) -> pd.DataFrame:
+        """
+        Load mapping annotation data from mapping.parquet.
+
+        Returns:
+            DataFrame with deduplicated mapping annotations containing species, segment, reference
+        """
+        mapping_file = self.data_path / "mapping.parquet"
+
+        if not mapping_file.exists():
+            logger.warning("Mapping annotation file not found: %s", mapping_file)
+            return pd.DataFrame()
+
+        try:
+            mapping_df = pd.read_parquet(mapping_file, engine='pyarrow')
+
+            # Select only the relevant columns and deduplicate
+            annotation_cols = ['species', 'segment', 'cluster']
+
+            # Check if all required columns exist
+            missing_cols = [col for col in annotation_cols if col not in mapping_df.columns]
+            if missing_cols:
+                logger.warning("Missing required columns in mapping.parquet: %s", missing_cols)
+                return pd.DataFrame()
+
+            # Select relevant columns and deduplicate
+            annotation_df = mapping_df[annotation_cols].drop_duplicates()
+
+            annotation_df.rename(columns={'cluster': 'reference'}, inplace=True)
+
+            logger.info("Loaded %d unique reference annotations from mapping data", len(annotation_df))
+            return annotation_df
+
+        except Exception as e:
+            logger.warning("Could not load mapping annotation data: %s", e)
+            return pd.DataFrame()
 
     def load_data(self) -> Dict[str, pd.DataFrame]:
         """
@@ -343,6 +381,143 @@ class CoverageDataManager(DataManager):
         }
 
         return summary
+
+    def get_references_for_segment(self, segment: str) -> List[str]:
+        """
+        Get all references that belong to a specific segment.
+
+        Args:
+            segment: Segment identifier (e.g., 'L', 'S')
+
+        Returns:
+            List of reference identifiers for the segment
+        """
+        if self.annotation.empty:
+            logger.warning("No annotation data available")
+            return []
+
+        # Filter annotation data for the specific segment
+        segment_refs = self.annotation[
+            self.annotation['segment'].str.upper() == segment.upper()
+        ]['reference'].unique().tolist()
+
+        return segment_refs
+
+    def get_references_for_species_segment(self, species: str, segment: str) -> List[str]:
+        """
+        Get all references that belong to a specific species and segment.
+
+        Args:
+            species: Species identifier
+            segment: Segment identifier
+
+        Returns:
+            List of reference identifiers for the species-segment combination
+        """
+        if self.annotation.empty:
+            logger.warning("No annotation data available")
+            return []
+
+        # Filter annotation data for the specific species and segment
+        refs = self.annotation[
+            (self.annotation['species'].str.upper() == species.upper()) &
+            (self.annotation['segment'].str.upper() == segment.upper())
+        ]['reference'].unique().tolist()
+
+        return refs
+
+
+    def get_references_for_species(self, species: str) -> List[str]:
+        """
+        Get all references that belong to a specific species.
+
+        Args:
+            species: Species identifier
+
+        Returns:
+            List of reference identifiers for the species
+        """
+        if self.annotation.empty:
+            logger.warning("No annotation data available")
+            return []
+
+        # Filter annotation data for the specific species
+        species_refs = self.annotation[
+            self.annotation['species'].str.upper() == species.upper()
+        ]['reference'].unique().tolist()
+
+        return species_refs
+
+    def get_species_segment_for_reference(self, reference: str) -> Optional[Dict[str, str]]:
+        """
+        Get species and segment information for a specific reference.
+
+        Args:
+            reference: Reference identifier
+
+        Returns:
+            Dictionary with 'species' and 'segment' keys, or None if not found
+        """
+        if self.annotation.empty:
+            logger.warning("No annotation data available")
+            return None
+
+        # Find the annotation row for this reference
+        ref_annotation = self.annotation[
+            self.annotation['reference'] == reference
+        ]
+
+        if ref_annotation.empty:
+            return None
+
+        # Return the first match (should be unique after deduplication)
+        row = ref_annotation.iloc[0]
+        return {
+            'species': row['species'],
+            'segment': row['segment']
+        }
+    def get_species_for_reference(self, reference: str) -> Optional[str]:
+        """
+        Get species information for a specific reference.
+
+        Args:
+            reference: Reference identifier
+
+        Returns:
+            Species identifier for the reference, or None if not found
+        """
+        species_segment = self.get_species_segment_for_reference(reference)
+        return species_segment['species'] if species_segment else None
+
+    def get_segment_for_reference(self, reference: str) -> Optional[str]:
+        """
+        Get segment information for a specific reference.
+
+        Args:
+            reference: Reference identifier
+
+        Returns:
+            Segment identifier for the reference, or None if not found
+        """
+        species_segment = self.get_species_segment_for_reference(reference)
+        return species_segment['segment'] if species_segment else None
+
+    def get_samples_for_reference(self, reference: str) -> List[str]:
+        """
+        Get all samples that have coverage data for a specific reference.
+
+        Args:
+            reference: Reference identifier
+
+        Returns:
+            List of sample identifiers that have data for this reference
+        """
+        samples = []
+        for sample_id, sample_data in self.data.items():
+            if reference in sample_data:
+                samples.append(sample_id)
+
+        return samples
 
     def get_frequency_sd_data(self, sample_ids: List[str]) -> Dict[str, pd.DataFrame]:
         """

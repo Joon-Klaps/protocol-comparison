@@ -144,7 +144,7 @@ class ReadStatsTab:
         if 'read_processing' in self.components:
             try:
                 fig = self.components['read_processing']['viz'].create_processing_timeline(sample_ids)
-                if fig and fig.data:
+                if fig and (fig.data or fig.layout.annotations):
                     figures['figures'].append({
                         'title': 'Read Processing Timeline',
                         'description': 'Timeline showing read count changes through processing pipeline',
@@ -160,7 +160,7 @@ class ReadStatsTab:
                 mapping_figs = self.components['mapping']['viz'].create_all_visualizations(sample_ids)
                 if mapping_figs:
                     for title, fig in mapping_figs.items():
-                        if fig and fig.data:
+                        if fig and (fig.data or fig.layout.annotations):
                             figures['figures'].append({
                                 'title': title,
                                 'description': f'Mapping analysis: {title.lower()}' if "UMI" not in title else 'UMI statistics, PCR cycles are calculated as: log_2(Total UMIs / Unique UMIs)',
