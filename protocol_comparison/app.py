@@ -169,7 +169,7 @@ class DataPathManager:
             return False, f"Path is not a directory: {data_path}"
 
         # Check for expected subdirectories
-        expected_subdirs = ['consensus', 'custom_vcfs', 'read_stats', 'mapping']
+        expected_subdirs = ['consensus', 'custom_vcfs', 'read_stats', 'mapping', 'alignments']
         expected_files = ['mapping.parquet', 'reads.parquet']
         found_data = [p.name for p in path.glob("*") if p.name in expected_files or p.name in expected_subdirs]
 
@@ -479,14 +479,37 @@ def render_raw_data(data_dict: Dict[str, Any]):
 
     for table_data in tables:
         title = table_data.get('title', 'Data Table')
-        df = table_data.get('data')
+        data = table_data.get('data')
+        data_type = table_data.get('type', 'dataframe')
 
         with st.expander(f"📊 {title}"):
-            if df is not None and not df.empty:
-                st.dataframe(df, use_container_width=True)
-            else:
-                st.info("No data available")
+            if data_type == 'dataframe':
+                # Check if data is a DataFrame and has content
+                if data is not None and hasattr(data, 'empty') and not data.empty:
+                    st.dataframe(data, use_container_width=True)
+                else:
+                    st.info("No data available")
+            elif data_type == 'fasta':
+                if data and isinstance(data, str):
+                    # Display FASTA content
+                    st.code(data, language='fasta')
 
+                    # Add download button for FASTA files
+                    st.download_button(
+                        label="📥 Download FASTA",
+                        data=data,
+                        file_name=f"{title.replace(' ', '_').replace(':', '_')}.fasta",
+                        mime="text/plain",
+                        key=f"download_{title}_{hash(data)}"
+                    )
+                else:
+                    st.info("No FASTA data available")
+            else:
+                # Fallback for unknown data types
+                if data:
+                    st.write(data)
+                else:
+                    st.info("No data available")
 
 def render_module_tab(module_name: str, module_info: Dict[str, Any], data_path: str, selected_samples: Optional[List[str]]):
     """
@@ -580,6 +603,15 @@ def main():
     css_content = load_css()
     if css_content:
         st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
+
+    # Initialize global selection state if not present
+    if 'selection_mode' not in st.session_state:
+        st.session_state['selection_mode'] = 'all_samples'
+        st.session_state['selected_samples'] = None
+        st.session_state['selection_count'] = 0
+        st.session_state['has_specific_selection'] = False
+        st.session_state['preconfigured_info'] = None
+        st.session_state['enable_expensive_calculations'] = False
 
     # Application header
     st.title("🧬 Viral Genomics Protocol Comparison")

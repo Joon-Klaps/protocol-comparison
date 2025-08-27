@@ -602,7 +602,7 @@ if __name__ == "__main__":
         "--input-dir",
         type=str,
         default="/Users/joonklaps/Desktop/School/PhD/projects/LVE-BE002-PIPELINE/LVE-BE02-Supplmentary/results/HPC-results/TMP-RUN001-004/inrahost-analysis/data/",
-        help="Input directory containing nf-core/viralmetagenome output files, & other optional supporting files"
+        help="Input directory containing data output files, & other optional supporting files"
     )
     parser.add_argument(
         "--output-dir",
