@@ -20,13 +20,17 @@ logger = logging.getLogger(__name__)
 
 # Global cache for consensus data managers to avoid duplicate loading
 _consensus_data_cache = {}
+_identity_matrix_cache = {}
+_alignment_stats_cache = {}
 
 
 def clear_consensus_cache():
-    """Clear the global consensus data cache."""
-    global _consensus_data_cache
+    """Clear all global consensus data caches."""
+    global _consensus_data_cache, _identity_matrix_cache, _alignment_stats_cache
     _consensus_data_cache = {}
-    logger.info("Consensus data cache cleared")
+    _identity_matrix_cache = {}
+    _alignment_stats_cache = {}
+    logger.info("All consensus data caches cleared")
 
 
 class ConsensusDataManager(DataManager):
@@ -400,12 +404,29 @@ class ConsensusDataManager(DataManager):
             logger.error("Error filtering gap columns: %s", e)
             return alignment
 
-    def compute_pairwise_identity_matrix(self, alignment: Dict[str, SeqRecord]) -> np.array:
+    def compute_pairwise_identity_matrix(self, alignment: Dict[str, SeqRecord]) -> np.ndarray:
+        """
+        Compute pairwise identity matrix with caching.
+        
+        Args:
+            alignment: Dictionary with {sample_id: SeqRecord} structure
+            
+        Returns:
+            Identity matrix as numpy array
+        """
         if not alignment:
             return np.array([])
 
+        # Create cache key based on sample IDs and their sequences
+        sample_ids = sorted(alignment.keys())
+        cache_key = f"global_pid_{hash(tuple(sample_ids))}_{hash(tuple(str(alignment[sid].seq) for sid in sample_ids))}"
+        
+        # Check cache first
+        if cache_key in _identity_matrix_cache:
+            logger.debug("Using cached global PID matrix for %d samples", len(sample_ids))
+            return _identity_matrix_cache[cache_key]
+
         # Get all sample IDs
-        sample_ids = list(alignment.keys())
         num_samples = len(sample_ids)
 
         # Initialize identity matrix
@@ -421,6 +442,10 @@ class ConsensusDataManager(DataManager):
                     identity_matrix[i, j] = val
                     identity_matrix[j, i] = val
 
+        # Cache the result
+        _identity_matrix_cache[cache_key] = identity_matrix
+        logger.debug("Cached global PID matrix for %d samples", len(sample_ids))
+        
         return identity_matrix
 
     def compute_sequence_identity(self, seq_record1: SeqRecord, seq_record2: SeqRecord) -> float:
@@ -429,10 +454,94 @@ class ConsensusDataManager(DataManager):
         """
         seq1 = np.array(list(str(seq_record1.seq)))
         seq2 = np.array(list(str(seq_record2.seq)))
+
+        # Check if sequences are empty
+        if len(seq1) == 0 or len(seq2) == 0:
+            return 0.0
+
         # Compute identity
         matches = np.sum(seq1 == seq2)
         total = len(seq1)
         return matches / total if total > 0 else 0.0
+
+    def compute_sequence_identity_local(self, seq_record1: SeqRecord, seq_record2: SeqRecord) -> float:
+        """
+        Compute the local identity between aligned sequence records, ignoring positions with gaps ('-') or 'N'.
+
+        Args:
+            seq_record1: First sequence record
+            seq_record2: Second sequence record
+
+        Returns:
+            Local identity score (0.0 to 1.0)
+        """
+        seq1 = np.array(list(str(seq_record1.seq)))
+        seq2 = np.array(list(str(seq_record2.seq)))
+
+        # Check if sequences are empty
+        if len(seq1) == 0 or len(seq2) == 0:
+            return 0.0
+
+        # Create mask for positions that are not gaps or N (case insensitive)
+        valid_positions = ~np.isin(seq1, ['-', 'N', 'n']) & ~np.isin(seq2, ['-', 'N', 'n'])
+
+        # If no valid positions, return 0
+        try:
+            if not np.any(valid_positions):
+                return 0.0
+        except ValueError:
+            # Handle ambiguous truth value error
+            if np.sum(valid_positions) == 0:
+                return 0.0
+
+        # Compute identity only on valid positions
+        matches = np.sum(seq1[valid_positions] == seq2[valid_positions])
+        total_valid = np.sum(valid_positions)
+        return matches / total_valid if total_valid > 0 else 0.0
+
+    def compute_pairwise_identity_matrix_local(self, alignment: Dict[str, SeqRecord]) -> np.ndarray:
+        """
+        Compute pairwise identity matrix using local identity (ignoring gaps and Ns) with caching.
+
+        Args:
+            alignment: Dictionary with {sample_id: SeqRecord} structure
+
+        Returns:
+            Identity matrix as numpy array
+        """
+        if not alignment:
+            return np.array([])
+
+        # Create cache key based on sample IDs and their sequences
+        sample_ids = sorted(alignment.keys())
+        cache_key = f"local_pid_{hash(tuple(sample_ids))}_{hash(tuple(str(alignment[sid].seq) for sid in sample_ids))}"
+        
+        # Check cache first
+        if cache_key in _identity_matrix_cache:
+            logger.debug("Using cached local PID matrix for %d samples", len(sample_ids))
+            return _identity_matrix_cache[cache_key]
+
+        # Get all sample IDs
+        num_samples = len(sample_ids)
+
+        # Initialize identity matrix
+        identity_matrix = np.zeros((num_samples, num_samples), dtype=float)
+
+        # Compute pairwise identity
+        for i, sample1 in enumerate(sample_ids):
+            for j, sample2 in enumerate(sample_ids):
+                if i == j:
+                    identity_matrix[i, j] = 1.0
+                elif j < i:
+                    val = self.compute_sequence_identity_local(alignment[sample1], alignment[sample2])
+                    identity_matrix[i, j] = val
+                    identity_matrix[j, i] = val
+
+        # Cache the result
+        _identity_matrix_cache[cache_key] = identity_matrix
+        logger.debug("Cached local PID matrix for %d samples", len(sample_ids))
+        
+        return identity_matrix
 
     def format_alignment_for_dash_bio(self, alignment: Dict[str, SeqRecord]) -> str:
         """
@@ -496,25 +605,34 @@ class ConsensusDataManager(DataManager):
 
     def get_alignment_summary_stats(self, tuple_key: Tuple[str, str, str], sample_ids: List[str]) -> Dict[str, Any]:
         """
-        Get summary statistics for an alignment.
+        Get summary statistics for an alignment with caching.
 
         Args:
-            method: Assembly method
-            species: Species name
-            segment: Segment name
-            sample_ids: Optional list of sample IDs to consider
+            tuple_key: Tuple of (method, species, segment)
+            sample_ids: List of sample IDs to consider
 
         Returns:
             Dictionary with alignment statistics
         """
         method, species, segment = tuple_key
+        
+        # Create cache key based on the combination and sample IDs
+        sorted_sample_ids = sorted(sample_ids) if sample_ids else []
+        cache_key = f"stats_{method}_{species}_{segment}_{hash(tuple(sorted_sample_ids))}"
+        
+        # Check cache first
+        if cache_key in _alignment_stats_cache:
+            logger.debug("Using cached alignment stats for %s", tuple_key)
+            return _alignment_stats_cache[cache_key]
+        
         alignment_data = self.filter_alignment_by_samples(method, species, segment, sample_ids=sample_ids)
         if not alignment_data:
+            _alignment_stats_cache[cache_key] = {}
             return {}
 
         # Calculate basic stats
         first_seq = next(iter(alignment_data.values()))
-        alignment_length = len(first_seq.seq)
+        alignment_length = len(str(first_seq.seq)) if first_seq.seq else 0
         num_samples = len(alignment_data)
 
         most_divergent = "NA"
@@ -522,12 +640,17 @@ class ConsensusDataManager(DataManager):
         if len(alignment_data.keys()) > 2:
             most_divergent = self.get_most_divergent_sample(method, species, segment, list(alignment_data.keys()))
 
-
-        return {
+        stats = {
             'Alignment Length': alignment_length,
             'Number of Samples': num_samples,
             'Most Divergent Sample': most_divergent,
         }
+        
+        # Cache the result
+        _alignment_stats_cache[cache_key] = stats
+        logger.debug("Cached alignment stats for %s", tuple_key)
+        
+        return stats
 
 
     def get_available_combinations(self) -> List[Dict[str, str]]:

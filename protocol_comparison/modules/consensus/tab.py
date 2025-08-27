@@ -8,6 +8,7 @@ Contains no Streamlit code - returns pure data, visualizations, and custom HTML.
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 import logging
+import pandas as pd
 
 from .data import ConsensusDataManager
 from .visualizations import ConsensusVisualizations
@@ -30,6 +31,8 @@ class ConsensusTab:
         """
         self.data_path = Path(data_path)
         self.components = {}
+        self._cached_alignments = None
+        self._cached_samples = None
         self._initialize_components()
 
     def _initialize_components(self):
@@ -47,24 +50,32 @@ class ConsensusTab:
             self.components = {}
 
     def get_available_alignments(self) -> List[Tuple[str, str, str]]:
-        """Get list of available (method, species, segment) combinations."""
-        if 'consensus' in self.components:
-            try:
-                data_manager = self.components['consensus']['data_manager']
-                return list(data_manager.alignment_data.keys())
-            except Exception as e:
-                logger.warning("Error getting alignments: %s", e)
-        return []
+        """Get list of available (method, species, segment) combinations with caching."""
+        if self._cached_alignments is None:
+            if 'consensus' in self.components:
+                try:
+                    data_manager = self.components['consensus']['data_manager']
+                    self._cached_alignments = list(data_manager.alignment_data.keys())
+                except Exception as e:
+                    logger.warning("Error getting alignments: %s", e)
+                    self._cached_alignments = []
+            else:
+                self._cached_alignments = []
+        return self._cached_alignments
 
     def get_available_samples(self) -> List[str]:
-        """Get list of available samples for a specific alignment."""
-        if 'consensus' in self.components:
-            try:
-                data_manager = self.components['consensus']['data_manager']
-                return data_manager.get_available_samples()
-            except Exception as e:
-                logger.warning("Error getting samples: %s", e)
-        return []
+        """Get list of available samples with caching."""
+        if self._cached_samples is None:
+            if 'consensus' in self.components:
+                try:
+                    data_manager = self.components['consensus']['data_manager']
+                    self._cached_samples = data_manager.get_available_samples()
+                except Exception as e:
+                    logger.warning("Error getting samples: %s", e)
+                    self._cached_samples = []
+            else:
+                self._cached_samples = []
+        return self._cached_samples
 
     def get_summary_stats(
         self,
@@ -91,26 +102,29 @@ class ConsensusTab:
 
         data_manager = self.components['consensus']['data_manager']
 
-        keys = data_manager.alignment_data.keys()
+        # Use cached alignments instead of calling keys() multiple times
+        keys = self.get_available_alignments()
 
         # Calculate alignment summaries using data manager methods
-
         for selected_key in keys:
-            alignment_data = data_manager.alignment_data.get(selected_key, {})
+            try:
+                # Check if alignment data exists first (avoid unnecessary loading)
+                if selected_key not in data_manager.alignment_data:
+                    continue
 
-            if not alignment_data:
-                continue
+                # Add key information
+                stats = data_manager.get_alignment_summary_stats(selected_key, sample_ids)
+                if not stats:
+                    continue
 
-            # Add key information
-            stats = data_manager.get_alignment_summary_stats(selected_key, sample_ids)
-            if not stats:
-                continue
+                summary['sections'].append({
+                    'title': f"{selected_key[0]} - {selected_key[1]} {selected_key[2]}",
+                    'type': 'metrics',
+                    'data': stats
+                })
+            except Exception as e:
+                logger.warning("Error getting stats for %s: %s", selected_key, e)
 
-            summary['sections'].append({
-                'title': f"{selected_key[0]} - {selected_key[1]} {selected_key[2]}",
-                'type': 'metrics',
-                'data': stats
-            })
         return summary
 
     def get_visualizations(
@@ -121,7 +135,6 @@ class ConsensusTab:
         Get visualizations for consensus analysis.
 
         Args:
-            selected_keys: List of (method, species, segment) tuples
             sample_ids: Optional list of sample IDs to visualize
 
         Returns:
@@ -137,10 +150,10 @@ class ConsensusTab:
         if 'consensus' not in self.components:
             return figures
 
-        data_manager = self.components['consensus']['data_manager']
         viz_component = self.components['consensus']['viz']
 
-        keys = data_manager.alignment_data.keys()
+        # Use cached alignments
+        keys = self.get_available_alignments()
 
         for selected_key in keys:
             try:
@@ -178,9 +191,10 @@ class ConsensusTab:
 
         try:
             data_manager = self.components['consensus']['data_manager']
+            viz_component = self.components['consensus']['viz']
 
             # Iterate through each selected alignment combination
-            for selected_key in data_manager.alignment_data.keys():
+            for selected_key in self.get_available_alignments():
                 try:
                     method, species, segment = selected_key
 
@@ -216,6 +230,57 @@ class ConsensusTab:
                             'sample_count': len(filtered_data),
                             'alignment_length': len(str(list(filtered_data.values())[0].seq)) if filtered_data else 0
                         })
+
+                        # Get distance matrices from visualizations
+                        try:
+                            viz_result = viz_component.create_all_visualizations(selected_key, list(filtered_data.keys()))
+                            if viz_result and 'raw_data' in viz_result and viz_result['raw_data']:
+                                raw_data = viz_result['raw_data']
+
+                                # Add Global PID distance matrix
+                                if 'global_pid_distance_matrix' in raw_data:
+                                    global_data = raw_data['global_pid_distance_matrix']
+                                    if 'distance_matrix' in global_data and 'sample_labels' in global_data:
+                                        matrix = global_data['distance_matrix']
+                                        labels = global_data['sample_labels']
+
+                                        try:
+                                            # Create pandas DataFrame for distance matrix
+                                            df = pd.DataFrame(matrix, index=labels, columns=labels)
+                                            df.index.name = 'Sample'
+
+                                            data['tables'].append({
+                                                'title': f'Global PID Distance Matrix - {method} {species} {segment}',
+                                                'data': df,
+                                                'type': 'dataframe',
+                                                'description': 'Distance matrix (1 - identity) for Global PID method'
+                                            })
+                                        except Exception as csv_e:
+                                            logger.warning("Failed to create DataFrame for global distance matrix: %s", csv_e)
+
+                                # Add Local PID distance matrix
+                                if 'local_pid_distance_matrix' in raw_data:
+                                    local_data = raw_data['local_pid_distance_matrix']
+                                    if 'distance_matrix' in local_data and 'sample_labels' in local_data:
+                                        matrix = local_data['distance_matrix']
+                                        labels = local_data['sample_labels']
+
+                                        try:
+                                            # Create pandas DataFrame for distance matrix
+                                            df = pd.DataFrame(matrix, index=labels, columns=labels)
+                                            df.index.name = 'Sample'
+
+                                            data['tables'].append({
+                                                'title': f'Local PID Distance Matrix - {method} {species} {segment}',
+                                                'data': df,
+                                                'type': 'dataframe',
+                                                'description': 'Distance matrix (1 - identity) for Local PID method (ignoring gaps/Ns)'
+                                            })
+                                        except Exception as csv_e:
+                                            logger.warning("Failed to create DataFrame for local distance matrix: %s", csv_e)
+
+                        except Exception as viz_e:
+                            logger.warning("Failed to get distance matrices for key %s: %s", selected_key, viz_e)
 
                 except Exception as e:
                     logger.warning("Failed to get raw data for key %s: %s", selected_key, e)
