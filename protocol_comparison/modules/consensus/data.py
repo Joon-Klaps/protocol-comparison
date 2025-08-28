@@ -14,6 +14,13 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 import numpy as np
 
+# Optional MSA backend (pyfamsa)
+try:
+    from pyfamsa import Aligner as FamsaAligner, Sequence as FamsaSequence  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    FamsaAligner = None  # type: ignore
+    FamsaSequence = None  # type: ignore
+
 from ..base import DataManager
 
 logger = logging.getLogger(__name__)
@@ -68,6 +75,9 @@ class ConsensusDataManager(DataManager):
             self._alignment_data = {}
             self._alignment_stats = {}
             self._flat_data = None
+
+        # cache for on-the-fly realignments: key -> {sample_id: SeqRecord}
+        self._realigned_cache: Dict[str, Dict[str, SeqRecord]] = {}
 
         self._validate_consensus_data_path()
 
@@ -150,6 +160,7 @@ class ConsensusDataManager(DataManager):
             # Cache all data
             _consensus_data_cache[self.cache_key] = {
                 'alignment_data': self._alignment_data,
+                'alignment_stats': self._alignment_stats,
                 'flat_data': flat_data
             }
             self._flat_data = flat_data
@@ -197,7 +208,7 @@ class ConsensusDataManager(DataManager):
                     logger.debug("Duplicate sequence ID found, keeping first occurrence: %s", record.id)
             logger.info("Loaded %d sequences from alignment file %s", len(sequences.keys()), alignment_file.name)
             return sequences
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             logger.error("Error loading alignment file %s: %s", alignment_file, e)
             return None
 
@@ -297,7 +308,9 @@ class ConsensusDataManager(DataManager):
         return alignment_data.get(sample_id) if alignment_data else None
 
     def filter_alignment_by_samples(self, method: str, species: str, segment: str,
-                                  sample_ids: List[str], remove_gap_columns: bool = True) -> Optional[Dict[str, SeqRecord]]:
+                                  sample_ids: List[str], remove_gap_columns: bool = True,
+                                  realign: bool = True,
+                                  guide_tree: str = "upgma") -> Optional[Dict[str, SeqRecord]]:
         """
         Filter alignment by specified sample IDs and optionally remove gap-only columns.
 
@@ -317,7 +330,18 @@ class ConsensusDataManager(DataManager):
             logger.warning("No alignment data found for %s/%s/%s", method, species, segment)
             return None
 
-        # Filter sequences by sample IDs
+        # If requested, realign the selected sequences on the fly using pyfamsa
+        if realign and sample_ids:
+            try:
+                realigned = self._realign_subset((method, species, segment), sample_ids, guide_tree=guide_tree)
+                if remove_gap_columns:
+                    realigned = self._remove_gap_only_columns(realigned)
+                return realigned
+            except Exception as e:
+                logger.warning("Realignment failed for %s/%s/%s; falling back to subset with optional gap filtering: %s",
+                               method, species, segment, e)
+
+        # Fallback: Filter sequences by sample IDs from original alignment
         # alignment_data is a dict with {sample_id: SeqRecord} structure
         filtered_alignment = {}
         for sample_id, record in alignment_data.items():
@@ -336,6 +360,71 @@ class ConsensusDataManager(DataManager):
             filtered_alignment = self._remove_gap_only_columns(filtered_alignment)
 
         return filtered_alignment
+
+    def _realign_subset(self, key: Tuple[str, str, str], sample_ids: List[str], guide_tree: str = "upgma") -> Dict[str, SeqRecord]:
+        """Realign a subset of sequences using pyfamsa and cache the result.
+
+        Args:
+            key: Tuple (method, species, segment)
+            sample_ids: List of sample IDs to realign
+            guide_tree: Guide tree method for FAMSA (e.g., 'upgma' or 'nj')
+
+        Returns:
+            Dict[sample_id, SeqRecord] of aligned sequences
+        """
+        method, species, segment = key
+        alignment_data = self.get_alignment_data_for(method, species, segment)
+        if not alignment_data:
+            raise ValueError(f"No alignment data available for {key}")
+
+        # Build a deterministic cache key
+        ordered_ids = tuple(sample_ids)
+        cache_key = f"realign::{method}::{species}::{segment}::{guide_tree}::{hash(ordered_ids)}"
+
+        if cache_key in self._realigned_cache:
+            logger.debug("Using cached realigned subset for %s", cache_key)
+            return self._realigned_cache[cache_key]
+
+        if FamsaAligner is None or FamsaSequence is None:
+            raise ImportError("pyfamsa is not installed or failed to import")
+
+        # Collect un-gapped sequences for the selected IDs
+        famsa_inputs: List[Any] = []
+        id_preserve: List[str] = []
+        for sid in ordered_ids:
+            if sid not in alignment_data:
+                logger.debug("Sample %s not found in alignment for %s; skipping", sid, key)
+                continue
+            raw_seq = str(alignment_data[sid].seq).replace('-', '')
+            famsa_inputs.append(FamsaSequence(sid.encode('utf-8'), raw_seq.encode('utf-8')))
+            id_preserve.append(sid)
+
+        if not famsa_inputs:
+            raise ValueError("No valid samples found to realign")
+
+        # Run alignment
+        aligner = FamsaAligner(guide_tree=guide_tree)  # type: ignore[arg-type]
+        msa = aligner.align(famsa_inputs)
+
+        # Map back to SeqRecords preserving the requested order
+        realigned: Dict[str, SeqRecord] = {}
+        for seq in msa:
+            sid = seq.id.decode('utf-8')
+            aligned_seq = seq.sequence.decode('utf-8')
+            # Use original record metadata if available
+            if sid in alignment_data:
+                orig = alignment_data[sid]
+                realigned[sid] = SeqRecord(Seq(aligned_seq), id=orig.id, description=orig.description)
+            else:
+                realigned[sid] = SeqRecord(Seq(aligned_seq), id=sid, description="")
+
+        # Ensure order respects requested sample_ids where present
+        ordered_realigned = {sid: realigned[sid] for sid in id_preserve if sid in realigned}
+
+        # Cache and return
+        self._realigned_cache[cache_key] = ordered_realigned
+        logger.info("Realigned %d sequences for %s/%s/%s", len(ordered_realigned), method, species, segment)
+        return ordered_realigned
 
     def filter_all_alignments_by_samples(self, sample_ids:List[str]) -> Dict[str, Dict[str, Dict[str, Optional[Dict[str, SeqRecord]]]]]:
         """
@@ -400,7 +489,7 @@ class ConsensusDataManager(DataManager):
         except ImportError:
             logger.error("NumPy not available - cannot filter gap columns")
             return alignment
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             logger.error("Error filtering gap columns: %s", e)
             return alignment
 
@@ -600,7 +689,7 @@ class ConsensusDataManager(DataManager):
             return sample_ids_list[most_divergent_idx]
 
         except Exception as e:
-            logger.error(f"Error finding most divergent sample: {e}")
+            logger.error("Error finding most divergent sample: %s", e)
             return None
 
     def get_alignment_summary_stats(self, tuple_key: Tuple[str, str, str], sample_ids: List[str]) -> Dict[str, Any]:

@@ -187,7 +187,8 @@ class SampleSelectionManager:
         col1, col2 = st.columns([2, 1])
 
         with col1:
-            selection_options = ["All samples", "Custom selection"]
+            # Put "Custom selection" first so the default app startup only selects a small subset (first 5)
+            selection_options = ["Custom selection", "All samples"]
             if self.preconfigured_selections and self.preconfigured_selections.get_available_file_prefixes():
                 selection_options.append("Preconfigured selections")
 

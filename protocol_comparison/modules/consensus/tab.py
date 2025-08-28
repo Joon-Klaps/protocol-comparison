@@ -198,28 +198,31 @@ class ConsensusTab:
                 try:
                     method, species, segment = selected_key
 
-                    # Get alignment data for this combination
-                    alignment_data = data_manager.alignment_data.get(selected_key, {})
-
-                    if not alignment_data:
-                        continue
-
-                    # Filter by sample_ids if provided
-                    if sample_ids:
-                        filtered_data = {
-                            sample_id: seq_record
-                            for sample_id, seq_record in alignment_data.items()
-                            if sample_id in sample_ids
-                        }
+                    # Build a realigned filtered alignment for this combination (ensures consistent MSA)
+                    if sample_ids and len(sample_ids) > 0:
+                        filtered_data = data_manager.filter_alignment_by_samples(
+                            method, species, segment, sample_ids, remove_gap_columns=True, realign=True
+                        ) or {}
                     else:
-                        filtered_data = alignment_data
+                        # Use all available samples for this key
+                        alignment_data = data_manager.alignment_data.get(selected_key, {})
+                        if not alignment_data:
+                            continue
+                        all_ids = list(alignment_data.keys())
+                        filtered_data = data_manager.filter_alignment_by_samples(
+                            method, species, segment, all_ids, remove_gap_columns=True, realign=True
+                        ) or {}
 
                     if filtered_data:
                         # Convert to FASTA format for raw data display
                         fasta_lines = []
-                        for sample_id, seq_record in filtered_data.items():
-                            fasta_lines.append(f">{sample_id}")
-                            fasta_lines.append(str(seq_record.seq))
+                        # Keep order: if sample_ids provided, respect that order; else keep dict order
+                        ordered_ids = sample_ids if sample_ids else list(filtered_data.keys())
+                        for sample_id in ordered_ids:
+                            if sample_id in filtered_data:
+                                seq_record = filtered_data[sample_id]
+                                fasta_lines.append(f">{sample_id}")
+                                fasta_lines.append(str(seq_record.seq))
 
                         fasta_content = "\n".join(fasta_lines)
 
