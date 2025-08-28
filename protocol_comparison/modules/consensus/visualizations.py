@@ -8,6 +8,7 @@ using dash_bio components for interactive multiple sequence alignment display an
 import plotly.graph_objects as go
 import logging
 import streamlit as st
+from ...sample_selection import label_for_sample
 import numpy as np
 
 from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
@@ -142,9 +143,12 @@ class ConsensusVisualizations:
             global_identity_matrix = self._reindex_matrix(global_identity_matrix, aligned_sample_ids, list(alignment_data.keys()))
 
             # Create combined heatmap with both datasets
+            # Build display labels using alias mapping
+            display_labels = [label_for_sample(sid) for sid in aligned_sample_ids]
+
             combined_fig = self._create_dual_heatmap(
                 local_identity_matrix, global_identity_matrix,
-                aligned_sample_ids, method_name, species, segment
+                display_labels, method_name, species, segment
             )
 
             if combined_fig is None:

@@ -49,12 +49,21 @@ class PreconfiguredSelections:
         df = df.rename(columns={
             'Condition_group-to-check': 'condition',
             'LVE_codes-to-compare': 'codes_raw',
-            'Comment_additional-information': 'comment'
+            'Comment_additional-information': 'comment',
+            # Optional column for alternative naming
+            'BNI_SeqID': 'aliases_raw'
         })
 
         df['codes_list'] = df['codes_raw'].apply(
             lambda x: [c for c in str(x).replace(',', ' ').split() if c != '']
         )
+        # Parse aliases list if available; keep None when absent
+        if 'aliases_raw' in df.columns:
+            df['aliases_list'] = df['aliases_raw'].apply(
+                lambda x: [c.strip() for c in str(x).split(',') if c.strip() != ''] if pd.notna(x) else []
+            )
+        else:
+            df['aliases_list'] = [[] for _ in range(len(df))]
         df['source_file'] = parquet_file.name
         df['file_prefix'] = file_prefix
 
@@ -66,12 +75,27 @@ class PreconfiguredSelections:
 
         for _, row in filtered_df.iterrows():
             selection_key = row['condition']
+            # Build alias mapping if lengths are compatible (>0 and same length)
+            aliases_list = row.get('aliases_list', []) if isinstance(row.get('aliases_list', []), list) else []
+            alias_by_code = {}
+            if aliases_list:
+                if len(aliases_list) != len(row['codes_list']):
+                    logger.warning(
+                        "Alias list length (%d) does not match codes list length (%d) in %s - condition '%s'",
+                        len(aliases_list), len(row['codes_list']), parquet_file.name, selection_key
+                    )
+                # Zip will truncate to min length
+                alias_by_code = {code: alias for code, alias in zip(row['codes_list'], aliases_list)}
+
             self.selections[file_prefix][selection_key] = {
                 'condition': row['condition'],
                 'lve_codes': row['codes_list'],
                 'comment': row['comment'],
                 'source_file': row['source_file'],
-                'file_prefix': row['file_prefix']
+                'file_prefix': row['file_prefix'],
+                # Optional alias data
+                'aliases_list': aliases_list,
+                'alias_by_code': alias_by_code
             }
 
     def load_preconfigured_selections(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
@@ -218,6 +242,9 @@ class SampleSelectionManager:
                         st.warning(f"Ignoring {len(missing_requested)} missing ID(s): {', '.join(missing_requested)}")
 
                 st.session_state["sample_order"] = selected_samples
+                # Clear any alias mapping for custom selection
+                st.session_state.pop("sample_alias_map", None)
+                st.session_state.pop("sample_alias_order", None)
                 return selected_samples if selected_samples else None, None
 
             # Fallback to multiselect when no paste provided
@@ -229,6 +256,9 @@ class SampleSelectionManager:
             )
             if selected_samples:
                 st.session_state["sample_order"] = selected_samples
+                # Clear any alias mapping for custom selection
+                st.session_state.pop("sample_alias_map", None)
+                st.session_state.pop("sample_alias_order", None)
             return selected_samples if selected_samples else None, None
 
         if selection_type == "Preconfigured selections" and self.preconfigured_selections:
@@ -236,6 +266,9 @@ class SampleSelectionManager:
 
         # All samples selected
         st.session_state["sample_order"] = list(available_samples)
+        # Clear any alias mapping for all-samples mode
+        st.session_state.pop("sample_alias_map", None)
+        st.session_state.pop("sample_alias_order", None)
         return None, None
 
     def _render_preconfigured_selection(self, available_samples: List[str]) -> tuple[Optional[List[str]], Optional[Dict[str, Any]]]:
@@ -314,6 +347,22 @@ class SampleSelectionManager:
 
         # Persist desired plotting order and return only the samples that are actually available
         st.session_state["sample_order"] = available_requested
+
+        # Apply alias mapping if present
+        alias_map = {}
+        alias_by_code = config_info.get('alias_by_code') if isinstance(config_info, dict) else None
+        if isinstance(alias_by_code, dict) and alias_by_code:
+            alias_map = {code: alias_by_code.get(code, code) for code in available_requested}
+            st.session_state["sample_alias_map"] = alias_map
+            st.session_state["sample_alias_order"] = [alias_map.get(code, code) for code in available_requested]
+            # Initialize toggle to use alias labels by default when aliases are present
+            if "use_alias_labels" not in st.session_state:
+                st.session_state["use_alias_labels"] = True
+        else:
+            # Clear any previous alias mapping
+            st.session_state.pop("sample_alias_map", None)
+            st.session_state.pop("sample_alias_order", None)
+            st.session_state["use_alias_labels"] = False
         return available_requested if available_requested else None, config_info
 
     def render_sidebar_info(self, selected_preconfigured_info: Optional[Dict[str, Any]]) -> None:
@@ -326,6 +375,30 @@ class SampleSelectionManager:
                 st.markdown(f"*{selected_preconfigured_info['condition']}*")
                 if selected_preconfigured_info['comment']:
                     st.caption(selected_preconfigured_info['comment'])
+
+                # If alias mapping is active, show a compact indicator and mapping expander
+                alias_map = st.session_state.get("sample_alias_map", {})
+                if isinstance(alias_map, dict) and alias_map:
+                    # Toggle: Use alternative sample names
+                    current = st.session_state.get("use_alias_labels", True)
+                    use_alias = st.toggle(
+                        "Use alternative names",
+                        value=current,
+                        key="use_alias_labels",
+                        help="Toggle display between alternative names and raw sample IDs",
+                        label_visibility="visible",
+                    )
+                    if use_alias:
+                        st.markdown("✅ Using alternative sample names")
+                    else:
+                        st.markdown("✅ Displaying raw sample IDs")
+                    # Display mapping in the current selection order
+                    ordered_samples = st.session_state.get("sample_order", list(alias_map.keys()))
+                    with st.expander("View ID → Alias mapping", expanded=False):
+                        # Build a small two-column table-like text
+                        for sid in ordered_samples:
+                            alias = alias_map.get(sid, sid)
+                            st.markdown(f"`{sid}` → **{alias}**")
 
     # ---------------------------
     # Helper methods
@@ -387,3 +460,40 @@ def apply_sample_order(df: pd.DataFrame, sample_col: str = "sample_id") -> pd.Da
     ordered_df = df.copy()
     ordered_df[sample_col] = pd.Categorical(ordered_df[sample_col], categories=order, ordered=True)
     return ordered_df.sort_values(sample_col)
+
+
+# ---------------------------
+# Alias/label utilities
+# ---------------------------
+def get_current_sample_alias_map() -> Dict[str, str]:
+    """Return current mapping from sample_id -> alias label from session state, if any."""
+    alias_map = st.session_state.get("sample_alias_map", {})
+    return dict(alias_map) if isinstance(alias_map, dict) else {}
+
+
+def label_for_sample(sample_id: str) -> str:
+    """Return display label for a sample, falling back to the sample_id."""
+    use_alias = st.session_state.get("use_alias_labels", True)
+    alias_map = get_current_sample_alias_map()
+    if use_alias and alias_map:
+        return alias_map.get(sample_id, sample_id)
+    return sample_id
+
+
+def get_current_label_order() -> List[str]:
+    """Return desired label order for display (aliases if present, else raw order)."""
+    use_alias = st.session_state.get("use_alias_labels", True)
+    alias_order = st.session_state.get("sample_alias_order")
+    if use_alias and isinstance(alias_order, list) and alias_order:
+        return list(alias_order)
+    # Fall back to raw sample order
+    return get_current_sample_order()
+
+
+def map_series_to_labels(series: pd.Series) -> pd.Series:
+    """Map a pandas Series of sample IDs to display labels using the alias map."""
+    use_alias = st.session_state.get("use_alias_labels", True)
+    alias_map = get_current_sample_alias_map()
+    if not use_alias or not alias_map:
+        return series
+    return series.map(lambda s: alias_map.get(s, s))

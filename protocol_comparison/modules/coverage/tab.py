@@ -13,6 +13,7 @@ import pandas as pd
 from .data import CoverageDataManager
 from .summary_stats import CoverageSummaryStats
 from .visualizations import CoverageVisualizations
+from ...sample_selection import label_for_sample
 
 logger = logging.getLogger(__name__)
 
@@ -264,7 +265,7 @@ class CoverageTab:
                     if profile_fig and (profile_fig.data or profile_fig.layout.annotations):
                         profiles['profiles'].append({
                             'sample_id': sample_id,
-                            'title': f'Depth Profile: {sample_id}',
+                            'title': f'Depth Profile: {label_for_sample(str(sample_id))}',
                             'figure': profile_fig,
                             'type': 'depth_profile'
                         })

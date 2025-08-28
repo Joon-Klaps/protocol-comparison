@@ -12,6 +12,9 @@ import streamlit as st
 import pandas as pd
 
 from .summary_stats import ReadProcessingDataManager
+from ....sample_selection import (
+    label_for_sample,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,16 +73,17 @@ class ReadProcessingVisualizations:
         # Add a trace for each sample
         for _, row in reads_df.iterrows():
             sample_id = row['sample']
+            display_label = label_for_sample(str(sample_id))
             counts = [row['raw_reads'], row['post_trimming_reads'], row['post_host_removal_reads']]
 
             fig.add_trace(go.Scatter(
                 x=steps,
                 y=counts,
                 mode='lines+markers',
-                name=sample_id,
+                name=display_label,
                 line=dict(width=2),
                 marker=dict(size=6),
-                hovertemplate=f'<b>{sample_id}</b><br>' +
+                hovertemplate=f'<b>{display_label}</b><br>' +
                              'Step: %{x}<br>' +
                              'Reads: %{y:,}<extra></extra>'
             ))
@@ -126,6 +130,10 @@ class ReadProcessingVisualizations:
             reads_df['sample'] = reads_df['sample'].cat.set_categories(order, ordered=True)
             reads_df = reads_df.sort_values('sample')
 
+        # Derive alias labels for hover/ticks while keeping raw IDs on x
+        reads_df = reads_df.copy()
+        reads_df['label'] = reads_df['sample'].astype(str).map(label_for_sample)
+
         # Calculate efficiency metrics
         reads_df['trimming_retention'] = reads_df['post_trimming_reads'] / reads_df['raw_reads'] * 100
         reads_df['host_removal_retention'] = reads_df['post_host_removal_reads'] / reads_df['post_trimming_reads'] * 100
@@ -133,31 +141,36 @@ class ReadProcessingVisualizations:
 
         fig = go.Figure()
 
-        # Add traces for each efficiency metric
+        custom = reads_df[['label', 'sample']].astype(str).to_numpy()
+
+        # Add traces for each efficiency metric with raw IDs on x
         fig.add_trace(go.Bar(
-            x=reads_df['sample'],
+            x=reads_df['sample'].astype(str),
             y=reads_df['trimming_retention'],
             name='Trimming Retention %',
-            marker_color='lightblue'
+            marker_color='lightblue',
+            customdata=custom
         ))
 
         fig.add_trace(go.Bar(
-            x=reads_df['sample'],
+            x=reads_df['sample'].astype(str),
             y=reads_df['host_removal_retention'],
             name='Host Removal Retention %',
-            marker_color='lightcoral'
+            marker_color='lightcoral',
+            customdata=custom
         ))
 
         fig.add_trace(go.Bar(
-            x=reads_df['sample'],
+            x=reads_df['sample'].astype(str),
             y=reads_df['overall_retention'],
             name='Overall Retention %',
-            marker_color='lightgreen'
+            marker_color='lightgreen',
+            customdata=custom
         ))
 
         fig.update_layout(
             title='Read Processing Efficiency by Sample',
-            xaxis_title='Sample ID',
+            xaxis_title='Sample',
             yaxis_title='Retention Percentage (%)',
             xaxis_tickangle=-45,
             height=600,
@@ -172,9 +185,23 @@ class ReadProcessingVisualizations:
             )
         )
 
-        # Ensure x-axis respects the sample order categories
-        if isinstance(order, list) and order:
-            fig.update_xaxes(categoryorder='array', categoryarray=order)
+        # Ensure x-axis uses raw IDs for categories but shows alias labels
+        sample_order = st.session_state.get("sample_order", list(reads_df['sample'].astype(str).unique()))
+        if isinstance(sample_order, list) and sample_order:
+            present = [s for s in sample_order if s in set(reads_df['sample'].astype(str))]
+            if present:
+                fig.update_xaxes(
+                    categoryorder='array', categoryarray=present,
+                    tickmode='array', tickvals=present,
+                    ticktext=[label_for_sample(s) for s in present],
+                    tickangle=-45
+                )
+
+        # Dual-name hover for all bars
+        fig.update_traces(
+            selector=dict(type='bar'),
+            hovertemplate='<b>%{customdata[0]} (%{customdata[1]})</b><br>%{fullData.name}: %{y:.2f}%<extra></extra>'
+        )
 
         return fig
 

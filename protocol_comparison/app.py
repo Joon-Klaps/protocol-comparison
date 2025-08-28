@@ -23,7 +23,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 try:
     from .sample_selection import SampleSelectionManager
 except ImportError:
-    from sample_selection import SampleSelectionManager
+    # Fallback to absolute package import if relative import fails
+    from protocol_comparison.sample_selection import SampleSelectionManager  # type: ignore
 
 # Import our custom modules
 
@@ -73,8 +74,9 @@ class ModuleDiscovery:
 
                 if tab_file.exists():
                     try:
-                        # Import the module's tab component
-                        module_name = f"modules.{module_dir.name}.tab"
+                        # Import the module's tab component with package prefix to support relative imports inside modules
+                        package_root = Path(__file__).parent.name
+                        module_name = f"{package_root}.modules.{module_dir.name}.tab"
                         tab_module = importlib.import_module(module_name)
 
                         # Get tab info
@@ -223,6 +225,8 @@ def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]
                     if total_selections == 0:
                         st.warning("⚠️ No preconfigured selections found in comparison_excels directory")
 
+                    # Alias toggle handled in the selection info panel; no extra global toggle here.
+
                 except Exception as e:
                     st.warning(f"Error loading preconfigured selections: {str(e)}")
             else:
@@ -247,7 +251,10 @@ def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]
 
                     # Clear coverage data cache
                     try:
-                        from modules.coverage.data import clear_coverage_cache
+                        try:
+                            from .modules.coverage.data import clear_coverage_cache  # type: ignore
+                        except ImportError:
+                            from protocol_comparison.modules.coverage.data import clear_coverage_cache  # type: ignore
                         clear_coverage_cache()
                     except ImportError:
                         pass  # Module might not be available
@@ -618,7 +625,7 @@ def main():
     st.markdown("**Analysis Dashboard**")
 
     # Sidebar configuration
-    data_path, data_path_valid, reload_requested, sample_selection_manager = render_sidebar()
+    data_path, data_path_valid, _reload_requested, sample_selection_manager = render_sidebar()
 
     if not data_path_valid:
         # Welcome screen

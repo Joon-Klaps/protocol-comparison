@@ -11,6 +11,7 @@ import logging
 import math
 
 from ...base import DataManager
+from ....sample_selection import label_for_sample
 
 logger = logging.getLogger(__name__)
 
@@ -118,9 +119,9 @@ class MappingSummaryStats:
                 'mean_umi_mapping_reads': math.floor(group['umi_mapping_reads'].mean(skipna=True)),
                 'mean_PCR_cycles': math.floor(group['estimated_PCR_cycles'].mean(skipna=True)),
                 'min_mapping_reads': group['reads_mapped'].min(skipna=True),
-                'min_mapping_reads_sample': group.loc[min_idx, 'sample'],
+                'min_mapping_reads_sample': label_for_sample(str(group.loc[min_idx, 'sample'])),
                 'max_mapping_reads': group['reads_mapped'].max(skipna=True),
-                'max_mapping_reads_sample': group.loc[max_idx, 'sample'],
+                'max_mapping_reads_sample': label_for_sample(str(group.loc[max_idx, 'sample'])),
                 'sample_count': len(group)
             }
 

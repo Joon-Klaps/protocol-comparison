@@ -11,7 +11,10 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import logging
-import streamlit as st  # used to read session order
+from ...sample_selection import (
+    get_current_sample_order,
+    label_for_sample,
+)
 
 if TYPE_CHECKING:
     from .data import CoverageDataManager
@@ -113,24 +116,23 @@ class CoverageVisualizations:
 
         recovery_df = pd.DataFrame(plot_data)
 
-        # Apply desired sample order from session state if present
-        sample_order: List[str] = []
-        if st is not None:
-            order_val = st.session_state.get("sample_order", [])
-            if isinstance(order_val, list):
-                sample_order = order_val
+        # Apply desired sample order from session state if present, then derive display labels
+        sample_order: List[str] = get_current_sample_order([])
         if sample_order:
             recovery_df['sample_id'] = pd.Categorical(recovery_df['sample_id'], categories=sample_order, ordered=True)
             recovery_df = recovery_df.sort_values('sample_id')
+        # Alias labels for display and custom hover
+        recovery_df['alias_label'] = recovery_df['sample_id'].astype(str).map(label_for_sample)
 
         fig = px.bar(
             recovery_df,
             x='sample_id',
             y='recovery_percentage',
             color='reference',
-            barmode='group',  # This creates dodged/grouped bars instead of stacked
+            barmode='group',
             title=f'Genome Recovery Percentage by Sample and Reference (min depth: {self.depth_threshold}x)',
-            labels={'recovery_percentage': 'Recovery (%)', 'sample_id': 'Sample ID'}
+            labels={'recovery_percentage': 'Recovery (%)', 'sample_id': 'Sample'},
+            custom_data=['alias_label', 'sample_id']
         )
         fig.update_layout(
             xaxis_tickangle=-45,
@@ -139,9 +141,21 @@ class CoverageVisualizations:
             bargroupgap=0.05  # Gap between bars within a group
         )
 
-        # Ensure x-axis respects the sample order
+        # Ensure x-axis respects raw sample order, but display alias labels
+        sample_order = get_current_sample_order([])
         if sample_order:
-            fig.update_xaxes(categoryorder='array', categoryarray=sample_order)
+            fig.update_xaxes(
+                categoryorder='array',
+                categoryarray=sample_order,
+                tickmode='array',
+                tickvals=sample_order,
+                ticktext=[label_for_sample(s) for s in sample_order]
+            )
+
+        # Add hover info with both alias and raw ID per bar
+        fig.update_traces(hovertemplate='<b>%{customdata[0]} (%{customdata[1]})</b><br>'
+                                         'Reference: %{fullData.name}<br>'
+                                         'Recovery: %{y:.2f}%<extra></extra>')
 
         return fig
 
@@ -169,7 +183,7 @@ class CoverageVisualizations:
 
         fig = make_subplots(
             rows=len(sample_data), cols=1,
-            subplot_titles=[f'{sample_id} - {ref}' for ref in sample_data.keys()],
+            subplot_titles=[f'{label_for_sample(sample_id)} - {ref}' for ref in sample_data.keys()],
             shared_xaxes=True
         )
 
@@ -187,7 +201,7 @@ class CoverageVisualizations:
                 )
 
         fig.update_layout(
-            title=f'Depth Profile - {sample_id}',
+            title=f'Depth Profile - {label_for_sample(sample_id)}',
             height=300 * len(sample_data),
             showlegend=True
         )
@@ -344,7 +358,7 @@ class CoverageVisualizations:
         # Create subplot for each sample
         fig = make_subplots(
             rows=len(valid_samples), cols=1,
-            subplot_titles=[f'{sample_id}, {species} - {segment} ({sample_reference_map[sample_id]})' for sample_id in valid_samples],
+            subplot_titles=[f'{label_for_sample(sample_id)}, {species} - {segment} ({sample_reference_map[sample_id]})' for sample_id in valid_samples],
             shared_xaxes=True
         )
 
@@ -358,7 +372,7 @@ class CoverageVisualizations:
                     x=df['POS'],
                     y=df['depth'],
                     mode='lines',
-                    name=f'{sample_id}',
+                    name=f'{label_for_sample(sample_id)}',
                     line=dict(width=2)
                 ),
                 row=i+1, col=1
@@ -449,12 +463,14 @@ class CoverageVisualizations:
                             x=df_filtered['POS'],
                             y=df_filtered['depth'],
                             mode='lines',
-                            name=f'{sample_id}',
+                            name=f'{label_for_sample(sample_id)}',
                             line=dict(color=color, width=1.5),
-                            hovertemplate=f'<b>{sample_id}</b><br>' +
-                                        'Position: %{x}<br>' +
-                                        'Depth: %{y}<br>' +
-                                        '<extra></extra>',
+                            hovertemplate=(
+                                f'<b>{label_for_sample(sample_id)}</b><br>'
+                                'Position: %{x}<br>'
+                                'Depth: %{y}<br>'
+                                '<extra></extra>'
+                            ),
                             showlegend=(row_idx == 0)  # Only show legend for first reference
                         ),
                         row=row_idx + 1, col=1

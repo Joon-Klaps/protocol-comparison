@@ -13,6 +13,7 @@ from .reads.summary_stats import ReadProcessingDataManager, ReadProcessingSummar
 from .reads.visualizations import ReadProcessingVisualizations
 from .mapping.summary_stats import MappingDataManager, MappingSummaryStats
 from .mapping.visualizations import MappingVisualizations
+from ...sample_selection import map_series_to_labels
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +207,15 @@ class ReadStatsTab:
                                     filtered_df = df.loc[available_samples]
 
                             if not filtered_df.empty:
+                                # Add alias display column if sample column exists
+                                if 'sample' in filtered_df.columns:
+                                    filtered_df = filtered_df.copy()
+                                    filtered_df['display_label'] = map_series_to_labels(filtered_df['sample'].astype(str))
+                                    # Reorder to show display label next to sample
+                                    cols = filtered_df.columns.tolist()
+                                    if 'display_label' in cols and 'sample' in cols:
+                                        cols.insert(cols.index('sample') + 1, cols.pop(cols.index('display_label')))
+                                        filtered_df = filtered_df[cols]
                                 data['tables'].append({
                                     'title': f'Read Processing: {data_name.replace("_", " ").title()}',
                                     'data': filtered_df,
@@ -227,6 +237,15 @@ class ReadStatsTab:
                                 filtered_df = df[df['sample'].isin(sample_ids)]
 
                             if not filtered_df.empty:
+                                # Add alias display column if sample column exists
+                                if 'sample' in filtered_df.columns:
+                                    filtered_df = filtered_df.copy()
+                                    filtered_df['display_label'] = map_series_to_labels(filtered_df['sample'].astype(str))
+                                    # Reorder to show display label next to sample
+                                    cols = filtered_df.columns.tolist()
+                                    if 'display_label' in cols and 'sample' in cols:
+                                        cols.insert(cols.index('sample') + 1, cols.pop(cols.index('display_label')))
+                                        filtered_df = filtered_df[cols]
                                 data['tables'].append({
                                     'title': f'Mapping: {data_name.replace("_", " ").title()}',
                                     'data': filtered_df,

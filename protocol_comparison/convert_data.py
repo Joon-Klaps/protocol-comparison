@@ -32,6 +32,81 @@ def load_excel(file_path: Path, sheet_name: str, **kwargs) -> pd.DataFrame:
         logging.error("Error loading sheet '%s' from %s: %s", sheet_name, file_path, e)
         sys.exit(1)
 
+def extract_metadata(file_path: Path) -> pd.DataFrame:
+    """
+    Extract metadata from the main DataFrame.
+
+    Args:
+        file_path: Path to the Excel file.
+
+    Returns:
+        DataFrame with metadata.
+    """
+    sheets = pd.ExcelFile(file_path).sheet_names
+    # Find a sheet whose name contains 'metadata' (case-insensitive)
+    metadata_sheets = [s for s in sheets if "metadata" in str(s).lower()]
+    if not metadata_sheets:
+        logging.error("Sheet 'metadata' not found in %s", file_path)
+        return pd.DataFrame()
+    metadata_sheet = metadata_sheets[0]
+
+    df = load_excel(
+        file_path,
+        str(metadata_sheet),
+        dtype={"KUL_DOC_Dilution_series": str},
+        na_values=["not-in-linelist","NA", " ", "", "N/A"],
+    )
+
+    columns_of_interest = [
+		"LVE_SeqID",
+		"Sample_Catagory",
+		"LVE_SeqID_BaseCode",
+		"Sample_Ct_Category",
+		"Column1",
+		"SampleID",
+		"BNI_SeqID",
+		"KUL_Sequence_filename",
+		"KUL_DOC_Project code",
+		"KUL_DOC_Sample_project_category",
+		"KUL_DOC_Condition_Tested_EXT_Extractions-used",
+		"KUL_DOC_Condition_Tested_EXT_Total_elutes-in-extractions-used",
+		"KUL_DOC_Condition_Tested_EXT_Elutes-used",
+		"KUL_DOC_Condition_Tested_EXT_Vol-used",
+		"KUL_DOC_Condition_Tested_LIB",
+		"KUL_DOC_Condition_Tested_CAP",
+		"KUL_DOC_Dilution_series",
+		"Database_idSpecimen",
+		"pathogenesisID",
+		"Fu_Time_Point",
+		"Study_Origin",
+		"Merged to LVE_SeqID",
+		"Merged_SeqID info",
+		"Process_started_from",
+		"Process_started_from_LVESeqID",
+		"SeqID_Info",
+		"Additional_SampleID_Info",
+		"Sample_Type",
+		"Database_PatientID",
+		"Sampling_date",
+		"Sampling_Year",
+		"Suspect_Virus",
+		"Sample_Comments",
+		"Diagnostic_PCR_date",
+		"Diagnostic_PCR_volume-in-µl",
+		"Diagnostic_PCR_LASV_GPC-Gene_Ct",
+		"Diagnostic_PCR_LASV-L-Gene_Ct",
+		"BNI_EXT_SeqID",
+		"BNI_EXT_BatchID",
+		"EXT_ProtocolID",
+		"EXT_Protocol_Version"
+    ]
+
+    for column in columns_of_interest:
+        if column not in df.columns:
+            logging.error("Column '%s' not found in the main DataFrame", column)
+            sys.exit(1)
+
+    return df[columns_of_interest].copy()
 
 def extract_mapping(file_path: Path) -> pd.DataFrame:
     """
@@ -307,7 +382,7 @@ def find_locations(directory: Path) -> Dict[str, Union[Path, List[Path], Dict]]:
         logging.warning("No de novo sequence files found for LASV  %s", viralmetagenome)
 
     if seq_all := [f for f in viralmetagenome.rglob("*.consensus.fasta") if "seqruns-collapsed" not in str(f)]:
-        logging.info("Found de sequence files: %s", len(seq_all))
+        logging.info("Found the sequence files: %s", len(seq_all))
         hazv_seq_all = [f for f in seq_all if "it2" in str(f)]
         mapping_seq_all = [f for f in seq_all if "constraint" in str(f) and 'only-mapping-mapdedup' in str(f)]
         locations["alignment"]["denovo"]["HAZV"] = {
@@ -563,6 +638,7 @@ def main(cli_args: argparse.Namespace) -> int:
             output_dfs["mapping"] = extract_mapping(main_excel)
             output_dfs["contigs"] = extract_contigs(main_excel)
             output_dfs["reads"] = extract_reads(main_excel)
+            output_dfs["metadata"] = extract_metadata(main_excel)
 
     if locations.get("comparison_excels"):
         comparison_excels = locations["comparison_excels"]
