@@ -53,8 +53,7 @@ class ReadStatsTab:
                 'viz': MappingVisualizations(self.data_path),
                 'data_manager': mapping_data_manager
             }
-
-        except Exception as e:
+        except (OSError, ValueError, KeyError, TypeError, ImportError, RuntimeError) as e:
             logger.error("Error initializing read stats components: %s", e)
             self.components = {}
 
@@ -67,7 +66,7 @@ class ReadStatsTab:
                 try:
                     samples = component_type['data_manager'].get_available_samples()
                     all_samples.update(samples)
-                except Exception as e:
+                except (ValueError, KeyError, TypeError) as e:
                     logger.warning("Error getting samples: %s", e)
 
         return sorted(list(all_samples))
@@ -105,7 +104,7 @@ class ReadStatsTab:
                         }
                     })
 
-            except Exception as e:
+            except (ValueError, KeyError, TypeError) as e:
                 logger.error("Error generating read processing stats: %s", e)
 
         # Mapping summary
@@ -120,7 +119,18 @@ class ReadStatsTab:
                             'data': segments
                         })
 
-            except Exception as e:
+                # Contamination flagged samples summary
+                contam = self.components['mapping']['stats'].compute_contamination_metrics(sample_ids)
+                flagged = contam.get('flagged', [])
+                if flagged:
+                    # Create a compact table-like list for summary
+                    summary['sections'].append({
+                        'title': 'Contamination Alerts (> 10%)',
+                        'type': 'table',
+                        'data': flagged
+                    })
+
+            except (ValueError, KeyError, TypeError) as e:
                 logger.error("Error generating mapping stats: %s", e)
 
         return summary
@@ -152,7 +162,7 @@ class ReadStatsTab:
                         'figure': fig,
                         'type': 'plotly'
                     })
-            except Exception as e:
+            except (ValueError, KeyError, TypeError) as e:
                 logger.error("Error generating read processing visualization: %s", e)
 
         # Mapping visualizations
@@ -168,7 +178,7 @@ class ReadStatsTab:
                                 'figure': fig,
                                 'type': 'plotly'
                             })
-            except Exception as e:
+            except (ValueError, KeyError, TypeError) as e:
                 logger.error("Error generating mapping visualizations: %s", e)
 
         return figures
@@ -221,7 +231,7 @@ class ReadStatsTab:
                                     'data': filtered_df,
                                     'type': 'dataframe'
                                 })
-            except Exception as e:
+            except (ValueError, KeyError, TypeError) as e:
                 logger.error("Error getting read processing raw data: %s", e)
 
         # Mapping raw data
@@ -251,7 +261,7 @@ class ReadStatsTab:
                                     'data': filtered_df,
                                     'type': 'dataframe'
                                 })
-            except Exception as e:
+            except (ValueError, KeyError, TypeError) as e:
                 logger.error("Error getting mapping raw data: %s", e)
 
         return data

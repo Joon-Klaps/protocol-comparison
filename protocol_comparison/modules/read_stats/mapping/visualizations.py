@@ -6,12 +6,13 @@ This module creates interactive visualizations for mapping statistics.
 
 from pathlib import Path
 from typing import Dict, List, Optional
+import pandas as pd
 import plotly.graph_objects as go
 import logging
 import streamlit as st
 from ....sample_selection import label_for_sample
 
-from .summary_stats import MappingDataManager
+from .summary_stats import MappingDataManager, MappingSummaryStats
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,100 @@ class MappingVisualizations:
         """
         self.data_manager = MappingDataManager(data_path)
         self.data = self.data_manager.load_data()
+
+    def create_contamination_heatmap(self, sample_ids: Optional[List[str]] = None, threshold: float = 10.0) -> go.Figure:
+        """Create a contamination heatmap (sum of % reads mapping to non-expected species).
+
+        Rows are samples, columns are species (e.g., LASV, HAZV). Color scale fixed to 0-10%.
+        """
+        stats = MappingSummaryStats(self.data_manager.data_path)
+        results = stats.compute_contamination_metrics(sample_ids=sample_ids, threshold=threshold)
+        matrix = results.get("matrix")
+        sample_category_map = results.get("sample_category_map", {})
+
+        fig = go.Figure()
+        if matrix is None or matrix.empty:
+            fig.update_layout(
+                title="Contamination Heatmap",
+                xaxis_title="Species",
+                yaxis_title="Samples",
+                height=400
+            )
+            fig.add_annotation(text="No contamination data to display", showarrow=False, xref='paper', yref='paper', x=0.5, y=0.5)
+            return fig
+
+        # Order rows by current sample order when available
+        order = st.session_state.get("sample_order", [])
+        if isinstance(order, list) and order:
+            present = [s for s in order if s in set(matrix.index.astype(str))]
+            if present:
+                matrix = matrix.reindex(present)
+
+        # Keep only LASV/HAZV columns if present, to focus on the two expected cross-contaminants
+        keep_cols = [c for c in ['LASV', 'HAZV'] if c in matrix.columns]
+        if keep_cols:
+            matrix = matrix[keep_cols]
+        if matrix.empty:
+            fig.update_layout(
+                title="Contamination Heatmap",
+                xaxis_title="Species",
+                yaxis_title="Samples",
+                height=400
+            )
+            fig.add_annotation(text="No contamination data to display", showarrow=False, xref='paper', yref='paper', x=0.5, y=0.5)
+            return fig
+
+        # Convert NaNs (expected species) to a sentinel so we can color them grey
+        sentinel = -1.0
+        text_vals = matrix.applymap(lambda v: 'NA' if pd.isna(v) else f"{float(v):.2f}%")
+        matrix_plot = matrix.fillna(sentinel)
+
+        # Prepare axis categories
+        samples_raw = matrix_plot.index.astype(str).tolist()
+        x_species = matrix_plot.columns.astype(str).tolist()
+        y_labels = [label_for_sample(s) for s in samples_raw]
+        # Include category label per sample for hover; shape must match z
+        customdata = [[[label_for_sample(s), s, sample_category_map.get(s, '')] for _ in x_species] for s in samples_raw]
+
+        # Colorscale with grey at the sentinel value (-1) and YlOrRd-like from 0 to 10
+        # Normalize stops over range [-1, 10] => width 11
+        colorscale = [
+            [0.0, '#bdbdbd'],        # grey for NA
+            [1.0/11.0, '#ffffcc'],   # ~0%
+            [3.0/11.0, '#ffeda0'],
+            [5.0/11.0, '#fed976'],
+            [7.0/11.0, '#feb24c'],
+            [9.0/11.0, '#fd8d3c'],
+            [10.0/11.0, '#f03b20'],
+            [1.0, '#bd0026']         # near 10%
+        ]
+
+        fig = go.Figure(data=go.Heatmap(
+            z=matrix_plot.values,
+            x=x_species,
+            y=samples_raw,
+            text=text_vals.values,
+            colorscale=colorscale,
+            zmin=sentinel,
+            zmax=10,
+            colorbar=dict(title='% Contamination', ticksuffix='%'),
+            customdata=customdata,
+            hovertemplate='<b>%{customdata[0]} (%{customdata[1]})</b><br>Category: %{customdata[2]}<br>Species: %{x}<br>Contamination: %{text}<extra></extra>'
+        ))
+
+        fig.update_layout(
+            title=f"Contamination Heatmap (0–{int(threshold)}%)",
+            xaxis_title="Species",
+            yaxis_title="Samples",
+            height=600
+        )
+
+        # Apply alias labels on y-axis
+        fig.update_yaxes(
+            categoryorder='array', categoryarray=samples_raw,
+            tickmode='array', tickvals=samples_raw, ticktext=y_labels
+        )
+        return fig
 
     def create_interactive_mapping_plot(self, species: str, sample_ids: Optional[List[str]] = None) -> go.Figure:
         """Create interactive mapping plot with toggle buttons.
@@ -353,6 +448,11 @@ class MappingVisualizations:
         mapping_df = self.data["mapping"].copy()
         if sample_ids:
             mapping_df = mapping_df[mapping_df['sample'].isin(sample_ids)]
+
+        # Contamination heatmap FIRST
+        contam_fig = self.create_contamination_heatmap(sample_ids)
+        if contam_fig and (contam_fig.data or contam_fig.layout.annotations):
+            figures['Contamination Heatmap'] = contam_fig
 
         # Create interactive plots for each species
         species_list = mapping_df['species'].unique()
