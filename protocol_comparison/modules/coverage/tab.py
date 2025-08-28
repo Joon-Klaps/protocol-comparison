@@ -297,6 +297,9 @@ class CoverageTab:
             return data
 
         try:
+            # Ensure we use the same threshold as the rest of the tab
+            depth_threshold = self._get_current_depth_threshold()
+
             # Get recovery statistics as DataFrame
             recovery_stats = self.components['coverage']['stats'].calculate_recovery_stats(sample_ids)
             if recovery_stats:
@@ -315,6 +318,85 @@ class CoverageTab:
                         'data': recovery_df,
                         'type': 'dataframe'
                     })
+
+            # Add depth statistics (flattened)
+            depth_stats = self.components['coverage']['stats'].calculate_depth_stats(sample_ids)
+            if depth_stats:
+                flat_depth_stats = []
+                for species, segments in depth_stats.items():
+                    for segment, stats in segments.items():
+                        row = {'species': species, 'segment': segment}
+                        row.update(stats)
+                        flat_depth_stats.append(row)
+
+                if flat_depth_stats:
+                    depth_df = pd.DataFrame(flat_depth_stats)
+                    data['tables'].append({
+                        'title': 'Coverage Depth Statistics',
+                        'data': depth_df,
+                        'type': 'dataframe'
+                    })
+
+            # Add per-sample, per-reference recovery table for export
+            try:
+                dm: CoverageDataManager = self.components['coverage']['data_manager']
+                per_sample_recovery = dm.get_recovery_data(sample_ids, depth_threshold)
+                records: List[Dict[str, Any]] = []
+                for sample_id, ref_map in per_sample_recovery.items():
+                    for reference, value in ref_map.items():
+                        species = None
+                        segment = None
+                        try:
+                            meta = dm.get_species_segment_for_reference(reference)
+                            if meta:
+                                species = meta.get('species')
+                                segment = meta.get('segment')
+                        except Exception:
+                            pass
+                        records.append({
+                            'sample_id': sample_id,
+                            'reference': reference,
+                            'species': species or reference,
+                            'segment': segment or 'unknown',
+                            'recovery_fraction': float(value),
+                            'recovery_percentage': float(value) * 100.0,
+                            'depth_threshold': depth_threshold,
+                        })
+
+                if records:
+                    per_sample_df = pd.DataFrame(records)
+                    # Order columns for readability
+                    cols = ['sample_id', 'species', 'segment', 'reference', 'recovery_fraction', 'recovery_percentage', 'depth_threshold']
+                    per_sample_df = per_sample_df[cols]
+                    data['tables'].append({
+                        'title': 'Per-sample Recovery by Reference',
+                        'data': per_sample_df,
+                        'type': 'dataframe'
+                    })
+            except Exception as ex:
+                logger.warning("Failed to build per-sample recovery table: %s", ex)
+
+            # Optionally include the raw coverage depth dataframes for selected samples only
+            # To avoid massive payloads, we only include these when specific samples are provided.
+            try:
+                if sample_ids:
+                    dm = self.components['coverage']['data_manager']
+                    for sample_id in sample_ids:
+                        try:
+                            sample_map = dm.get_sample_data(sample_id)
+                        except Exception:
+                            continue
+                        for reference, df in sample_map.items():
+                            if df is None or getattr(df, 'empty', True):
+                                continue
+                            # Title encodes sample and reference for clarity
+                            data['tables'].append({
+                                'title': f"Coverage Depth: {label_for_sample(str(sample_id))} - {reference}",
+                                'data': df,
+                                'type': 'dataframe'
+                            })
+            except Exception as ex:
+                logger.warning("Failed adding raw coverage dataframes: %s", ex)
 
 
         except Exception as e:

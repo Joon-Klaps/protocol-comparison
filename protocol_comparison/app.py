@@ -493,7 +493,31 @@ def render_raw_data(data_dict: Dict[str, Any]):
             if data_type == 'dataframe':
                 # Check if data is a DataFrame and has content
                 if data is not None and hasattr(data, 'empty') and not data.empty:
-                    st.dataframe(data, use_container_width=True)
+                    # Show only the head to avoid rendering massive tables
+                    try:
+                        import pandas as pd  # local import in case
+                        df = data if isinstance(data, pd.DataFrame) else None
+                    except Exception:
+                        df = None
+                    if df is not None:
+                        preview_rows = min(50, len(df))
+                        st.caption(f"Showing first {preview_rows} of {len(df)} rows")
+                        st.dataframe(df.head(preview_rows), use_container_width=True)
+                        # Add CSV download button for full dataframe
+                        try:
+                            csv_bytes = df.to_csv(index=False).encode('utf-8')
+                            safe_name = title.replace(' ', '_').replace(':', '_')
+                            st.download_button(
+                                label="📥 Download full CSV",
+                                data=csv_bytes,
+                                file_name=f"{safe_name}.csv",
+                                mime="text/csv",
+                                key=f"download_csv_{hash((safe_name, len(df), tuple(df.columns)))}"
+                            )
+                        except Exception as ex:
+                            st.warning(f"Could not prepare CSV download: {ex}")
+                    else:
+                        st.dataframe(data, use_container_width=True)
                 else:
                     st.info("No data available")
             elif data_type == 'fasta':
