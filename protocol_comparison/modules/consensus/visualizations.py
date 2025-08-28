@@ -7,10 +7,16 @@ using dash_bio components for interactive multiple sequence alignment display an
 
 import plotly.graph_objects as go
 import logging
+import streamlit as st
 import numpy as np
 
-from typing import Dict, List, Optional, Any, Tuple
-from AlignmentViewer import AlignmentViewer
+from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
+if TYPE_CHECKING:
+    from AlignmentViewer import AlignmentViewer  # type: ignore
+try:
+    from AlignmentViewer import AlignmentViewer  # type: ignore
+except ImportError:
+    AlignmentViewer = None  # type: ignore
 
 
 from .data import ConsensusDataManager
@@ -69,15 +75,15 @@ class ConsensusVisualizations:
 
         # Format for dash_bio using data manager helper
         try:
+            if AlignmentViewer is None:
+                logger.warning("AlignmentViewer is not available; skipping alignment visualization")
+                return None
+
             sequences = [seq for seq in alignment_data.values()]
-            # Create AlignmentChart component
             fig = AlignmentViewer.get_alignment_html(
                 sequences,
                 color_snps_only=True,
-                # show_consensus=True,
             )
-
-
             if fig:
                 logger.info("Created alignment visualization for %d sequences", len(alignment_data))
             return fig
@@ -128,6 +134,13 @@ class ConsensusVisualizations:
 
             aligned_sample_ids = list(alignment_data.keys())
 
+            # Reorder labels to match the desired sample order from the UI, if present
+            aligned_sample_ids = self._apply_sample_order_to_labels(aligned_sample_ids)
+
+            # Reorder matrices to match the label order
+            local_identity_matrix = self._reindex_matrix(local_identity_matrix, aligned_sample_ids, list(alignment_data.keys()))
+            global_identity_matrix = self._reindex_matrix(global_identity_matrix, aligned_sample_ids, list(alignment_data.keys()))
+
             # Create combined heatmap with both datasets
             combined_fig = self._create_dual_heatmap(
                 local_identity_matrix, global_identity_matrix,
@@ -155,6 +168,27 @@ class ConsensusVisualizations:
         except (ValueError, AttributeError, KeyError) as e:
             logger.error("Error creating identity heatmap for %s: %s", key, e)
             return None, None
+
+    def _apply_sample_order_to_labels(self, labels: List[str]) -> List[str]:
+        """Return labels ordered by session state's sample_order when available."""
+        order = st.session_state.get("sample_order", [])
+        if not isinstance(order, list) or not order:
+            return labels
+        # first keep those in desired order that are present, then append any remaining
+        desired_first = [s for s in order if s in labels]
+        remaining = [s for s in labels if s not in desired_first]
+        return desired_first + remaining
+
+    def _reindex_matrix(self, matrix: np.ndarray, new_labels: List[str], old_labels: List[str]) -> np.ndarray:
+        """Reindex a square matrix from old_labels order to new_labels order."""
+        if matrix is None or not isinstance(matrix, np.ndarray):
+            return matrix
+        index_map = {label: i for i, label in enumerate(old_labels)}
+        # ensure all new_labels exist in old_labels; if not, skip
+        indices = [index_map[label] for label in new_labels if label in index_map]
+        if not indices:
+            return matrix
+        return matrix[np.ix_(indices, indices)]
 
     def _validate_identity_matrix(self, matrix, matrix_type: str, key: Tuple[str, str, str]) -> bool:
         """

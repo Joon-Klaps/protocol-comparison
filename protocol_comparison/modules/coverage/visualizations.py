@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import logging
+import streamlit as st  # used to read session order
 
 if TYPE_CHECKING:
     from .data import CoverageDataManager
@@ -54,6 +55,18 @@ class CoverageVisualizations:
         self.depth_threshold = threshold
         self.stats.set_depth_threshold(threshold)
 
+    def _format_reference_label(self, reference: str) -> str:
+        """Return a human-friendly label for a reference.
+
+        Falls back to the raw reference if metadata is missing.
+        """
+        meta = self.data_manager.get_species_segment_for_reference(reference)
+        if isinstance(meta, dict) and meta:
+            vals = [str(v) for v in meta.values() if v is not None]
+            if vals:
+                return f"{reference} - {' '.join(vals)}"
+        return str(reference)
+
     def create_recovery_stats_plot(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
         """
         Create recovery statistics bar plot.
@@ -85,7 +98,7 @@ class CoverageVisualizations:
             for reference, recovery_value in ref_data.items():
                 plot_data.append({
                     'sample_id': sample_id,
-                    'reference': f"{reference} - {' '.join(self.data_manager.get_species_segment_for_reference(reference).values())}",
+                    'reference': self._format_reference_label(reference),
                     'recovery_percentage': recovery_value * 100
                 })
 
@@ -99,6 +112,16 @@ class CoverageVisualizations:
             return fig
 
         recovery_df = pd.DataFrame(plot_data)
+
+        # Apply desired sample order from session state if present
+        sample_order: List[str] = []
+        if st is not None:
+            order_val = st.session_state.get("sample_order", [])
+            if isinstance(order_val, list):
+                sample_order = order_val
+        if sample_order:
+            recovery_df['sample_id'] = pd.Categorical(recovery_df['sample_id'], categories=sample_order, ordered=True)
+            recovery_df = recovery_df.sort_values('sample_id')
 
         fig = px.bar(
             recovery_df,
@@ -115,6 +138,10 @@ class CoverageVisualizations:
             bargap=0.1,  # Gap between groups of bars
             bargroupgap=0.05  # Gap between bars within a group
         )
+
+        # Ensure x-axis respects the sample order
+        if sample_order:
+            fig.update_xaxes(categoryorder='array', categoryarray=sample_order)
 
         return fig
 
@@ -211,7 +238,7 @@ class CoverageVisualizations:
 
         fig = make_subplots(
             rows=len(references), cols=1,
-            subplot_titles=[f'{ref} - {' '.join(self.data_manager.get_species_segment_for_reference(ref).values())}' for ref in references],
+            subplot_titles=[self._format_reference_label(ref) for ref in references],
             shared_xaxes=False,  # Independent x-axes
             vertical_spacing=0.20
         )
@@ -379,7 +406,7 @@ class CoverageVisualizations:
         # Create subplots for each reference
         fig = make_subplots(
             rows=len(references), cols=1,
-            subplot_titles=[f'{ref} - {' '.join(self.data_manager.get_species_segment_for_reference(ref).values())}' for ref in references],
+            subplot_titles=[self._format_reference_label(ref) for ref in references],
             shared_xaxes=False,  # Independent x-axes
             vertical_spacing=0.20
         )

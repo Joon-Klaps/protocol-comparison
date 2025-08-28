@@ -407,10 +407,10 @@ class ConsensusDataManager(DataManager):
     def compute_pairwise_identity_matrix(self, alignment: Dict[str, SeqRecord]) -> np.ndarray:
         """
         Compute pairwise identity matrix with caching.
-        
+
         Args:
             alignment: Dictionary with {sample_id: SeqRecord} structure
-            
+
         Returns:
             Identity matrix as numpy array
         """
@@ -420,7 +420,7 @@ class ConsensusDataManager(DataManager):
         # Create cache key based on sample IDs and their sequences
         sample_ids = sorted(alignment.keys())
         cache_key = f"global_pid_{hash(tuple(sample_ids))}_{hash(tuple(str(alignment[sid].seq) for sid in sample_ids))}"
-        
+
         # Check cache first
         if cache_key in _identity_matrix_cache:
             logger.debug("Using cached global PID matrix for %d samples", len(sample_ids))
@@ -445,7 +445,7 @@ class ConsensusDataManager(DataManager):
         # Cache the result
         _identity_matrix_cache[cache_key] = identity_matrix
         logger.debug("Cached global PID matrix for %d samples", len(sample_ids))
-        
+
         return identity_matrix
 
     def compute_sequence_identity(self, seq_record1: SeqRecord, seq_record2: SeqRecord) -> float:
@@ -515,7 +515,7 @@ class ConsensusDataManager(DataManager):
         # Create cache key based on sample IDs and their sequences
         sample_ids = sorted(alignment.keys())
         cache_key = f"local_pid_{hash(tuple(sample_ids))}_{hash(tuple(str(alignment[sid].seq) for sid in sample_ids))}"
-        
+
         # Check cache first
         if cache_key in _identity_matrix_cache:
             logger.debug("Using cached local PID matrix for %d samples", len(sample_ids))
@@ -540,7 +540,7 @@ class ConsensusDataManager(DataManager):
         # Cache the result
         _identity_matrix_cache[cache_key] = identity_matrix
         logger.debug("Cached local PID matrix for %d samples", len(sample_ids))
-        
+
         return identity_matrix
 
     def format_alignment_for_dash_bio(self, alignment: Dict[str, SeqRecord]) -> str:
@@ -615,16 +615,16 @@ class ConsensusDataManager(DataManager):
             Dictionary with alignment statistics
         """
         method, species, segment = tuple_key
-        
+
         # Create cache key based on the combination and sample IDs
         sorted_sample_ids = sorted(sample_ids) if sample_ids else []
         cache_key = f"stats_{method}_{species}_{segment}_{hash(tuple(sorted_sample_ids))}"
-        
+
         # Check cache first
         if cache_key in _alignment_stats_cache:
             logger.debug("Using cached alignment stats for %s", tuple_key)
             return _alignment_stats_cache[cache_key]
-        
+
         alignment_data = self.filter_alignment_by_samples(method, species, segment, sample_ids=sample_ids)
         if not alignment_data:
             _alignment_stats_cache[cache_key] = {}
@@ -645,11 +645,11 @@ class ConsensusDataManager(DataManager):
             'Number of Samples': num_samples,
             'Most Divergent Sample': most_divergent,
         }
-        
+
         # Cache the result
         _alignment_stats_cache[cache_key] = stats
         logger.debug("Cached alignment stats for %s", tuple_key)
-        
+
         return stats
 
 

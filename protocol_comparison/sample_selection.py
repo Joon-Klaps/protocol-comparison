@@ -11,6 +11,7 @@ This module handles:
 import pandas as pd
 import streamlit as st
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -63,7 +64,7 @@ class PreconfiguredSelections:
         if file_prefix not in self.selections:
             self.selections[file_prefix] = {}
 
-        for index, row in filtered_df.iterrows():
+        for _, row in filtered_df.iterrows():
             selection_key = row['condition']
             self.selections[file_prefix][selection_key] = {
                 'condition': row['condition'],
@@ -94,8 +95,8 @@ class PreconfiguredSelections:
         for parquet_file in parquet_files:
             try:
                 self._process_parquet_file(parquet_file)
-            except Exception as e:
-                logger.warning(f"Error processing file {parquet_file.name}: {e}")
+            except (OSError, ValueError, KeyError, RuntimeError) as e:
+                logger.warning("Error processing file %s: %s", parquet_file.name, e)
 
         return self.selections
 
@@ -107,10 +108,10 @@ class PreconfiguredSelections:
         def sort_key(prefix):
             if prefix.startswith('RUN'):
                 try:
-                    return int(prefix.replace('RUN', ''))
+                    return (0, int(prefix.replace('RUN', '')))
                 except ValueError:
-                    return float('inf')  # Put non-numeric at end
-            return prefix
+                    return (1, prefix)
+            return (1, prefix)
 
         return sorted(prefixes, key=sort_key)
 
@@ -155,7 +156,7 @@ class SampleSelectionManager:
             self.preconfigured_selections = PreconfiguredSelections(self.data_path)
             self.preconfigured_selections.load_preconfigured_selections()
             return self.preconfigured_selections
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             logger.warning("Error loading preconfigured selections: %s", e)
             return None
 
@@ -175,16 +176,12 @@ class SampleSelectionManager:
         return total_selections, len(file_prefixes)
 
     def render_sample_selection(self, available_samples: List[str]) -> tuple[Optional[List[str]], Optional[Dict[str, Any]]]:
-        """
-        Render sample selection interface.
+        """Render sample selection UI and return the chosen samples and optional config info.
 
-        Args:
-            available_samples: List of available sample IDs
-
-        Returns:
-            Tuple of (selected sample IDs or None for all samples, selected preconfigured info)
+        Returns (selected_samples | None for all, selected_preconfigured_info | None).
         """
         if not available_samples:
+            st.session_state["sample_order"] = []
             return None, None
 
         col1, col2 = st.columns([2, 1])
@@ -203,25 +200,48 @@ class SampleSelectionManager:
         with col2:
             st.metric("Available Samples", len(available_samples))
 
-        selected_preconfigured_info = None
-
         if selection_type == "Custom selection":
-            # Individual sample selection
+            pasted = st.text_area(
+                "Paste LVE sample IDs (comma/space separated)",
+                placeholder="LVE00101, LVE00102 LVE00103, LVE00104 LVE00132",
+                height=100,
+                help="You can separate IDs using commas, spaces, or both. Duplicates will be removed while preserving order."
+            )
+
+            if pasted and pasted.strip():
+                selected_samples, missing_requested = self._parse_pasted_ids(pasted, available_samples)
+
+                with st.expander("Parsed selection summary", expanded=True):
+                    st.success(f"Found {len(selected_samples)} valid sample(s)")
+                    if missing_requested:
+                        st.warning(f"Ignoring {len(missing_requested)} missing ID(s): {', '.join(missing_requested)}")
+
+                st.session_state["sample_order"] = selected_samples
+                return selected_samples if selected_samples else None, None
+
+            # Fallback to multiselect when no paste provided
             selected_samples = st.multiselect(
                 "Select samples:",
                 options=available_samples,
                 default=available_samples[:5] if len(available_samples) > 5 else available_samples,
-                help="Choose specific samples for analysis"
+                help="Choose specific samples for analysis or paste IDs above"
             )
+            if selected_samples:
+                st.session_state["sample_order"] = selected_samples
             return selected_samples if selected_samples else None, None
 
-        elif selection_type == "Preconfigured selections" and self.preconfigured_selections:
+        if selection_type == "Preconfigured selections" and self.preconfigured_selections:
             return self._render_preconfigured_selection(available_samples)
 
-        return None, None  # Return None for all samples
+        # All samples selected
+        st.session_state["sample_order"] = list(available_samples)
+        return None, None
 
     def _render_preconfigured_selection(self, available_samples: List[str]) -> tuple[Optional[List[str]], Optional[Dict[str, Any]]]:
         """Render preconfigured selection interface."""
+        if not self.preconfigured_selections:
+            st.info("No preconfigured selections available")
+            return None, None
         # File prefix selection
         available_file_prefixes = self.preconfigured_selections.get_available_file_prefixes()
 
@@ -263,6 +283,8 @@ class SampleSelectionManager:
 
     def _process_selected_condition(self, file_prefix: str, condition: str, available_samples: List[str]) -> tuple[Optional[List[str]], Optional[Dict[str, Any]]]:
         """Process a selected preconfigured condition."""
+        if not self.preconfigured_selections:
+            return None, None
         config_info = self.preconfigured_selections.get_selection_by_file_and_key(file_prefix, condition)
 
         if not config_info:
@@ -277,12 +299,11 @@ class SampleSelectionManager:
             st.markdown(f"**Source:** {config_info['source_file']}")
             st.markdown(f"**Samples:** {', '.join(config_info['lve_codes'])}")
 
-            # Show which samples are available vs missing
+            # Show which samples are available vs missing, preserving requested order
+            requested_order = config_info['lve_codes']
             available_set = set(available_samples)
-            requested_set = set(config_info['lve_codes'])
-
-            available_requested = list(requested_set & available_set)
-            missing_requested = list(requested_set - available_set)
+            available_requested = [s for s in requested_order if s in available_set]
+            missing_requested = [s for s in requested_order if s not in available_set]
 
             if available_requested:
                 st.success(f"✅ Available samples ({len(available_requested)}): {', '.join(available_requested)}")
@@ -290,7 +311,8 @@ class SampleSelectionManager:
             if missing_requested:
                 st.warning(f"⚠️ Missing samples ({len(missing_requested)}): {', '.join(missing_requested)}")
 
-        # Return only the samples that are actually available
+        # Persist desired plotting order and return only the samples that are actually available
+        st.session_state["sample_order"] = available_requested
         return available_requested if available_requested else None, config_info
 
     def render_sidebar_info(self, selected_preconfigured_info: Optional[Dict[str, Any]]) -> None:
@@ -303,3 +325,64 @@ class SampleSelectionManager:
                 st.markdown(f"*{selected_preconfigured_info['condition']}*")
                 if selected_preconfigured_info['comment']:
                     st.caption(selected_preconfigured_info['comment'])
+
+    # ---------------------------
+    # Helper methods
+    # ---------------------------
+    def _parse_pasted_ids(self, text: str, available_samples: List[str]) -> tuple[List[str], List[str]]:
+        """Parse a large pasted string of sample IDs using commas and/or spaces as separators.
+
+        - Splits on one or more commas/whitespace.
+        - Normalizes case for matching, but returns canonical IDs as found in available_samples.
+        - De-duplicates while preserving the original order from the pasted string.
+
+        Returns:
+            (selected_in_order, missing_in_order)
+        """
+        # Build a case-insensitive lookup to preserve canonical IDs as present in available_samples
+        avail_map = {s.upper(): s for s in available_samples}
+
+        # Split by commas and/or whitespace, collapse empties
+        tokens = [t for t in re.split(r"[\s,]+", text.strip()) if t]
+
+        seen = set()
+        selected: List[str] = []
+        missing: List[str] = []
+
+        for tok in tokens:
+            key = tok.upper()
+            if key in seen:
+                continue
+            seen.add(key)
+            if key in avail_map:
+                selected.append(avail_map[key])
+            else:
+                # Keep original token in missing for user feedback
+                missing.append(tok)
+
+        return selected, missing
+
+
+# ---------------------------
+# Plot-order utilities
+# ---------------------------
+def get_current_sample_order(default: Optional[List[str]] = None) -> List[str]:
+    """Return the current desired sample order from session state."""
+    if default is None:
+        default = []
+    order = st.session_state.get("sample_order", default)
+    return list(order) if isinstance(order, list) else default
+
+
+def apply_sample_order(df: pd.DataFrame, sample_col: str = "sample_id") -> pd.DataFrame:
+    """Apply the current sample order to a DataFrame for consistent plotting.
+
+    - Sets 'sample_col' to a pandas Categorical with the saved order
+    - Returns a sorted copy of the DataFrame
+    """
+    order = get_current_sample_order()
+    if not order or sample_col not in df.columns:
+        return df
+    ordered_df = df.copy()
+    ordered_df[sample_col] = pd.Categorical(ordered_df[sample_col], categories=order, ordered=True)
+    return ordered_df.sort_values(sample_col)

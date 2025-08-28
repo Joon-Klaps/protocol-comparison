@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import plotly.graph_objects as go
 import logging
+import streamlit as st
 
 from .summary_stats import MappingDataManager
 
@@ -54,6 +55,13 @@ class MappingVisualizations:
 
         if species_data.empty:
             return go.Figure()
+
+        # Apply desired sample order if present
+        order = st.session_state.get("sample_order", [])
+        if isinstance(order, list) and order:
+            species_data['sample'] = species_data['sample'].astype('category')
+            species_data['sample'] = species_data['sample'].cat.set_categories(order, ordered=True)
+            species_data = species_data.sort_values('sample')
 
         fig = go.Figure()
 
@@ -206,9 +214,15 @@ class MappingVisualizations:
             )
         )
 
+        # Ensure x-axis respects the sample order categories
+        order = st.session_state.get("sample_order", [])
+        if isinstance(order, list) and order:
+            fig.update_xaxes(categoryorder='array', categoryarray=order)
+
         # Set initial visibility to Raw Mapped
-        for i, trace in enumerate(fig.data):
-            trace.visible = visibility_patterns['raw_mapped'][i]
+        fig.update_traces(selector=dict(), visible=False)
+        for i, vis in enumerate(visibility_patterns['raw_mapped']):
+            fig.data[i].visible = vis
 
         return fig
 
@@ -238,6 +252,13 @@ class MappingVisualizations:
 
         if species_data.empty:
             return go.Figure()
+
+        # Apply desired sample order if present
+        order = st.session_state.get("sample_order", [])
+        if isinstance(order, list) and order:
+            species_data['sample'] = species_data['sample'].astype('category')
+            species_data['sample'] = species_data['sample'].cat.set_categories(order, ordered=True)
+            species_data = species_data.sort_values('sample')
 
         fig = go.Figure()
 
@@ -396,9 +417,15 @@ class MappingVisualizations:
             )
         )
 
+        # Ensure x-axis respects the sample order categories
+        order = st.session_state.get("sample_order", [])
+        if isinstance(order, list) and order:
+            fig.update_xaxes(categoryorder='array', categoryarray=order)
+
         # Set initial visibility to UMI Reads
-        for i, trace in enumerate(fig.data):
-            trace.visible = visibility_patterns['umi_reads'][i]
+        fig.update_traces(selector=dict(), visible=False)
+        for i, vis in enumerate(visibility_patterns['umi_reads']):
+            fig.data[i].visible = vis
 
         return fig
 

@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import plotly.graph_objects as go
 import logging
+import streamlit as st
+import pandas as pd
 
 from .summary_stats import ReadProcessingDataManager
 
@@ -48,6 +50,17 @@ class ReadProcessingVisualizations:
         reads_df = self.data["reads"].copy()
         if sample_ids:
             reads_df = reads_df[reads_df['sample'].isin(sample_ids)]
+
+        # Legend order for line chart can follow sample_order
+        order = st.session_state.get("sample_order", [])
+        if isinstance(order, list) and order:
+            # Reorder DataFrame rows to emit traces in desired legend order
+            # Keep those in order first then append the rest
+            in_order = reads_df[reads_df['sample'].isin(order)]
+            in_order['sample'] = in_order['sample'].astype('category').cat.set_categories(order, ordered=True)
+            in_order = in_order.sort_values('sample')
+            rest = reads_df[~reads_df['sample'].isin(order)]
+            reads_df = pd.concat([in_order, rest], ignore_index=True)
 
         fig = go.Figure()
 
@@ -106,6 +119,13 @@ class ReadProcessingVisualizations:
         if sample_ids:
             reads_df = reads_df[reads_df['sample'].isin(sample_ids)]
 
+        # Apply ordering for bar x-axis
+        order = st.session_state.get("sample_order", [])
+        if isinstance(order, list) and order:
+            reads_df['sample'] = reads_df['sample'].astype('category')
+            reads_df['sample'] = reads_df['sample'].cat.set_categories(order, ordered=True)
+            reads_df = reads_df.sort_values('sample')
+
         # Calculate efficiency metrics
         reads_df['trimming_retention'] = reads_df['post_trimming_reads'] / reads_df['raw_reads'] * 100
         reads_df['host_removal_retention'] = reads_df['post_host_removal_reads'] / reads_df['post_trimming_reads'] * 100
@@ -151,6 +171,10 @@ class ReadProcessingVisualizations:
                 x=0.5
             )
         )
+
+        # Ensure x-axis respects the sample order categories
+        if isinstance(order, list) and order:
+            fig.update_xaxes(categoryorder='array', categoryarray=order)
 
         return fig
 
