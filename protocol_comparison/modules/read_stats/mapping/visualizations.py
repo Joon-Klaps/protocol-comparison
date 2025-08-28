@@ -225,30 +225,39 @@ class MappingVisualizations:
                 showactive=True,
                 x=-0.05,
                 xanchor="left",
-                y=1.15,
+                y=1.3,
                 yanchor="top",
                 buttons=[
-                    dict(label="Raw Mapped", method="update", args=[
+                    dict(label="Raw Mapped (Log)", method="update", args=[
                         {"visible": visibility_patterns['raw_mapped']},
-                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log"}
+                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Raw Mapped, Log)'}
                     ]),
-                    dict(label="Raw Unmapped", method="update", args=[
+                    dict(label="Raw Mapped (Linear)", method="update", args=[
+                        {"visible": visibility_patterns['raw_mapped']},
+                        {'yaxis.title': "Number of Reads", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Raw Mapped, Linear)'}
+                    ]),
+                    dict(label="Raw Unmapped (Log)", method="update", args=[
                         {"visible": visibility_patterns['raw_unmapped']},
-                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log"}
+                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Raw Unmapped, Log)'}
+                    ]),
+                    dict(label="Raw Unmapped (Linear)", method="update", args=[
+                        {"visible": visibility_patterns['raw_unmapped']},
+                        {'yaxis.title': "Number of Reads", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Raw Unmapped, Linear)'}
                     ]),
                     dict(label="% Mapped", method="update", args=[
                         {"visible": visibility_patterns['pct_mapped']},
-                        {'yaxis.title': "Percentage (%)", 'yaxis.type': "linear"}
+                        {'yaxis.title': "Percentage (%)", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (% Mapped)'}
                     ]),
                     dict(label="% Unmapped", method="update", args=[
                         {"visible": visibility_patterns['pct_unmapped']},
-                        {'yaxis.title': "Percentage (%)", 'yaxis.type': "linear"}
+                        {'yaxis.title': "Percentage (%)", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (% Unmapped)'}
                     ])
                 ]
             )
         ]
 
         fig.update_layout(
+            title=f'Mapping Statistics - {species} (Raw Mapped, Log)',
             xaxis_title='',
             yaxis=dict(title='Number of Reads (log scale)', type='log'),
             xaxis_tickangle=-45,
@@ -378,30 +387,43 @@ class MappingVisualizations:
                 showactive=True,
                 x=-0.05,
                 xanchor="left",
-                y=1.15,
+                y=1.3,
                 yanchor="top",
                 buttons=[
-                    dict(label="UMI Reads", method="update", args=[
+                    dict(label="UMI Reads (Log)", method="update", args=[
                         {"visible": visibility_patterns['umi_reads']},
-                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log"}
+                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (UMI Reads, Log)'}
                     ]),
-                    dict(label="Total UMIs", method="update", args=[
+                    dict(label="UMI Reads (Linear)", method="update", args=[
+                        {"visible": visibility_patterns['umi_reads']},
+                        {'yaxis.title': "Number of Reads", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (UMI Reads, Linear)'}
+                    ]),
+                    dict(label="Total UMIs (Log)", method="update", args=[
                         {"visible": visibility_patterns['total_umis']},
-                        {'yaxis.title': "Number of UMIs (log scale)", 'yaxis.type': "log"}
+                        {'yaxis.title': "Number of UMIs (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (Total UMIs, Log)'}
                     ]),
-                    dict(label="Unique UMIs", method="update", args=[
+                    dict(label="Total UMIs (Linear)", method="update", args=[
+                        {"visible": visibility_patterns['total_umis']},
+                        {'yaxis.title': "Number of UMIs", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (Total UMIs, Linear)'}
+                    ]),
+                    dict(label="Unique UMIs (Log)", method="update", args=[
                         {"visible": visibility_patterns['unique_umis']},
-                        {'yaxis.title': "Number of Unique UMIs (log scale)", 'yaxis.type': "log"}
+                        {'yaxis.title': "Number of Unique UMIs (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (Unique UMIs, Log)'}
+                    ]),
+                    dict(label="Unique UMIs (Linear)", method="update", args=[
+                        {"visible": visibility_patterns['unique_umis']},
+                        {'yaxis.title': "Number of Unique UMIs", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (Unique UMIs, Linear)'}
                     ]),
                     dict(label="PCR Cycles", method="update", args=[
                         {"visible": visibility_patterns['pcr_cycles']},
-                        {'yaxis.title': "Estimated PCR Cycles", 'yaxis.type': "linear"}
+                        {'yaxis.title': "Estimated PCR Cycles", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (PCR Cycles)'}
                     ])
                 ]
             )
         ]
 
         fig.update_layout(
+            title=f'UMI Statistics - {species} (UMI Reads, Log)',
             xaxis_title='',
             yaxis=dict(title='Number of Reads (log scale)', type='log'),
             xaxis_tickangle=-45,

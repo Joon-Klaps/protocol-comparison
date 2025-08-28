@@ -223,7 +223,7 @@ class CoverageTab:
                     if fig and (fig.data or fig.layout.annotations):
                         figures['figures'].append({
                             'title': title,
-                            'description': f'Coverage analysis: {title.lower()} (min depth: {depth_threshold}x)',
+                            'description': f'Coverage analysis: {title.lower()}',
                             'figure': fig,
                             'type': 'plotly'
                         })

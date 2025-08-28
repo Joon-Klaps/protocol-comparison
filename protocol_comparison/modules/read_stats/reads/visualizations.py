@@ -88,122 +88,46 @@ class ReadProcessingVisualizations:
                              'Reads: %{y:,}<extra></extra>'
             ))
 
+        # Add buttons for log/linear y-axis and update title
+        updatemenus = [
+            dict(
+                type="buttons",
+                direction="right",
+                showactive=True,
+                x=-0.05,
+                xanchor="left",
+                y=1.5,
+                yanchor="top",
+                buttons=[
+                    dict(label="Log Scale", method="relayout", args=[
+                        {"yaxis.type": "log", "yaxis.title": "Number of Reads (log scale)", "title.text": "Read Processing Pipeline - Count Changes by Sample (Log Scale)"}
+                    ]),
+                    dict(label="Linear Scale", method="relayout", args=[
+                        {"yaxis.type": "linear", "yaxis.title": "Number of Reads", "title.text": "Read Processing Pipeline - Count Changes by Sample (Linear Scale)"}
+                    ])
+                ]
+            )
+        ]
+
         fig.update_layout(
-            title='Read Processing Pipeline - Count Changes by Sample',
+            title='Read Processing Pipeline - Count Changes by Sample (Log Scale)',
             xaxis_title='Processing Step',
-            yaxis_title='Number of Reads',
+            yaxis_title='Number of Reads (log scale)',
             height=600,
             hovermode='closest',
             showlegend=True,
             legend=dict(
                 orientation="v",
                 yanchor="top",
-                y=1,
+                y=1.3,
                 xanchor="left",
                 x=1.02
-            )
+            ),
+            updatemenus=updatemenus
         )
 
         return fig
 
-    def create_efficiency_overview(self, sample_ids: Optional[List[str]] = None) -> go.Figure:
-        """
-        Create efficiency overview showing retention percentages.
-
-        Args:
-            sample_ids: Optional list of sample IDs to visualize
-
-        Returns:
-            Plotly figure for efficiency overview
-        """
-        if "reads" not in self.data or self.data["reads"].empty:
-            return go.Figure()
-
-        reads_df = self.data["reads"].copy()
-        if sample_ids:
-            reads_df = reads_df[reads_df['sample'].isin(sample_ids)]
-
-        # Apply ordering for bar x-axis
-        order = st.session_state.get("sample_order", [])
-        if isinstance(order, list) and order:
-            reads_df['sample'] = reads_df['sample'].astype('category')
-            reads_df['sample'] = reads_df['sample'].cat.set_categories(order, ordered=True)
-            reads_df = reads_df.sort_values('sample')
-
-        # Derive alias labels for hover/ticks while keeping raw IDs on x
-        reads_df = reads_df.copy()
-        reads_df['label'] = reads_df['sample'].astype(str).map(label_for_sample)
-
-        # Calculate efficiency metrics
-        reads_df['trimming_retention'] = reads_df['post_trimming_reads'] / reads_df['raw_reads'] * 100
-        reads_df['host_removal_retention'] = reads_df['post_host_removal_reads'] / reads_df['post_trimming_reads'] * 100
-        reads_df['overall_retention'] = reads_df['post_host_removal_reads'] / reads_df['raw_reads'] * 100
-
-        fig = go.Figure()
-
-        custom = reads_df[['label', 'sample']].astype(str).to_numpy()
-
-        # Add traces for each efficiency metric with raw IDs on x
-        fig.add_trace(go.Bar(
-            x=reads_df['sample'].astype(str),
-            y=reads_df['trimming_retention'],
-            name='Trimming Retention %',
-            marker_color='lightblue',
-            customdata=custom
-        ))
-
-        fig.add_trace(go.Bar(
-            x=reads_df['sample'].astype(str),
-            y=reads_df['host_removal_retention'],
-            name='Host Removal Retention %',
-            marker_color='lightcoral',
-            customdata=custom
-        ))
-
-        fig.add_trace(go.Bar(
-            x=reads_df['sample'].astype(str),
-            y=reads_df['overall_retention'],
-            name='Overall Retention %',
-            marker_color='lightgreen',
-            customdata=custom
-        ))
-
-        fig.update_layout(
-            title='Read Processing Efficiency by Sample',
-            xaxis_title='Sample',
-            yaxis_title='Retention Percentage (%)',
-            xaxis_tickangle=-45,
-            height=600,
-            barmode='group',
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=-0.2,
-                xanchor="center",
-                x=0.5
-            )
-        )
-
-        # Ensure x-axis uses raw IDs for categories but shows alias labels
-        sample_order = st.session_state.get("sample_order", list(reads_df['sample'].astype(str).unique()))
-        if isinstance(sample_order, list) and sample_order:
-            present = [s for s in sample_order if s in set(reads_df['sample'].astype(str))]
-            if present:
-                fig.update_xaxes(
-                    categoryorder='array', categoryarray=present,
-                    tickmode='array', tickvals=present,
-                    ticktext=[label_for_sample(s) for s in present],
-                    tickangle=-45
-                )
-
-        # Dual-name hover for all bars
-        fig.update_traces(
-            selector=dict(type='bar'),
-            hovertemplate='<b>%{customdata[0]} (%{customdata[1]})</b><br>%{fullData.name}: %{y:.2f}%<extra></extra>'
-        )
-
-        return fig
 
     def create_all_visualizations(self, sample_ids: Optional[List[str]] = None) -> Dict[str, go.Figure]:
         """
@@ -221,10 +145,5 @@ class ReadProcessingVisualizations:
         timeline_fig = self.create_processing_timeline(sample_ids)
         if timeline_fig.data or timeline_fig.layout.annotations:
             figures['processing_timeline'] = timeline_fig
-
-        # Efficiency overview
-        efficiency_fig = self.create_efficiency_overview(sample_ids)
-        if efficiency_fig.data or efficiency_fig.layout.annotations:
-            figures['efficiency_overview'] = efficiency_fig
 
         return figures

@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import logging
+import math
 from ...sample_selection import (
     get_current_sample_order,
     label_for_sample,
@@ -362,10 +363,21 @@ class CoverageVisualizations:
             shared_xaxes=True
         )
 
+        # Track maximum depth across all included samples to enable standardized Y-axis scaling
+        max_depth_value = 0
+
         for i, sample_id in enumerate(valid_samples):
             reference = sample_reference_map[sample_id]
             sample_data = self.data_manager.get_sample_data(sample_id, reference)
             df = sample_data[reference]
+
+            # Update global max depth
+            if 'depth' in df.columns and not df['depth'].empty:
+                depth_series = pd.to_numeric(df['depth'], errors='coerce')
+                if depth_series.notna().any():
+                    max_depth_value = max(max_depth_value, float(depth_series.max()))
+                else:
+                    logger.warning("Depth column contains no numeric values for sample %s, reference %s", sample_id, reference)
 
             fig.add_trace(
                 go.Scatter(
@@ -383,6 +395,45 @@ class CoverageVisualizations:
             height=200 * len(valid_samples),
             showlegend=True
         )
+
+        # Add buttons to toggle Y-axis scaling across subplots: Auto vs Standardized (0 .. max)
+        if max_depth_value > 0 and len(valid_samples) > 0:
+            # Build relayout payloads for all subplot y-axes using per-axis keys
+            auto_axes_updates = {}
+            std_axes_updates = {}
+            for idx in range(1, len(valid_samples) + 1):
+                axis_key = 'yaxis' if idx == 1 else f'yaxis{idx}'
+                auto_axes_updates[f'{axis_key}.autorange'] = True
+                # Remove any fixed range if present when switching back to autorange
+                auto_axes_updates[f'{axis_key}.range'] = None
+                std_axes_updates[f'{axis_key}.autorange'] = False
+                std_axes_updates[f'{axis_key}.range'] = [0, max_depth_value]
+
+            fig.update_layout(
+                updatemenus=[
+                    dict(
+                        type="buttons",
+                        direction="right",
+                        buttons=[
+                            dict(
+                                label="Auto Y",
+                                method="relayout",
+                                args=[auto_axes_updates]
+                            ),
+                            dict(
+                                label="Standardize Y",
+                                method="relayout",
+                                args=[std_axes_updates]
+                            ),
+                        ],
+                        x=-0.05,
+                        xanchor="left",
+                        y=1.3,
+                        yanchor="top",
+                        pad=dict(t=2, r=2, b=2, l=2)
+                    )
+                ]
+            )
 
         return fig
 
@@ -427,6 +478,8 @@ class CoverageVisualizations:
 
         # Generate colors for samples
         colors = px.colors.qualitative.Set1
+        # Track global max depth for standardized scaling across subplots
+        max_depth_value = 0.0
 
         for row_idx, reference in enumerate(references):
             sample_count = 0
@@ -439,22 +492,39 @@ class CoverageVisualizations:
 
                     # Check if required columns exist
                     if 'POS' not in df.columns:
-                        logger.warning("Missing POS column for sample %s, reference %s",
-                                     sample_id, reference)
+                        logger.warning(
+                            "Missing POS column for sample %s, reference %s",
+                            sample_id, reference,
+                        )
                         continue
 
                     if 'depth' not in df.columns:
-                        logger.warning("Missing depth columns for sample %s, reference %s",
-                                     sample_id, reference)
+                        logger.warning(
+                            "Missing depth columns for sample %s, reference %s",
+                            sample_id, reference,
+                        )
                         continue
 
-                    # Filter out zero depth positions for log scale
+                    # Filter out zero depth positions for log scale and hover sanity
                     df_filtered = df[df['depth'] > 0].copy()
 
                     if df_filtered.empty:
-                        logger.warning("No positions with depth > 0 for sample %s, reference %s",
-                                     sample_id, reference)
+                        logger.warning(
+                            "No positions with depth > 0 for sample %s, reference %s",
+                            sample_id, reference,
+                        )
                         continue
+
+                    # Update global max depth from the plotted data
+                    try:
+                        max_depth_value = max(
+                            max_depth_value, float(df_filtered['depth'].max())
+                        )
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "Non-numeric depths encountered for sample %s, reference %s",
+                            sample_id, reference,
+                        )
 
                     color = colors[sample_idx % len(colors)]
 
@@ -471,21 +541,19 @@ class CoverageVisualizations:
                                 'Depth: %{y}<br>'
                                 '<extra></extra>'
                             ),
-                            showlegend=(row_idx == 0)  # Only show legend for first reference
+                            showlegend=(row_idx == 0),  # Only show legend for first reference
                         ),
-                        row=row_idx + 1, col=1
+                        row=row_idx + 1, col=1,
                     )
                     sample_count += 1
 
-            # Add depth threshold line for each subplot
-            if sample_count > 0:  # Only add threshold line if we have data
+            # Add depth threshold line for each subplot where we have any data
+            if sample_count > 0:
                 fig.add_hline(
                     y=self.depth_threshold,
                     line_dash="dash",
                     line_color="red",
                     line_width=2,
-                    annotation_text=f"Depth Threshold: {self.depth_threshold}x",
-                    annotation_position="top right"
                 )
 
         # Update layout
@@ -493,21 +561,64 @@ class CoverageVisualizations:
             title='Depth Coverage by Reference (Log Scale)',
             height=300 * len(references),
             showlegend=True,
-            hovermode='x unified'
+            hovermode='x unified',
         )
 
-        # Update x-axis and y-axis labels for all subplots
+        # Initial axis setup (log scale)
+        log_upper = math.log10(max_depth_value) if max_depth_value > 0 else 0
         for i in range(len(references)):
             fig.update_xaxes(
                 title_text='Genomic Position',
                 range=[0, None],  # Start at 0, auto-scale max
-                row=i + 1, col=1
+                row=i + 1, col=1,
             )
             fig.update_yaxes(
                 title_text='Depth Coverage (log scale)',
                 type='log',
-                range= [0, 5],
-                row=i + 1, col=1
+                range=[0, math.ceil(log_upper)] if max_depth_value > 0 else [0, 1],
+                row=i + 1, col=1,
+            )
+
+        # Buttons to toggle Y-axis type with standardized max across subplots
+        if len(references) > 0 and max_depth_value > 0:
+            linear_updates = {}
+            log_updates = {}
+            log_upper_ceiled = math.ceil(log_upper)
+            for idx in range(1, len(references) + 1):
+                axis_key = 'yaxis' if idx == 1 else f'yaxis{idx}'
+                # Linear: fixed 0..max range
+                linear_updates[f'{axis_key}.type'] = 'linear'
+                linear_updates[f'{axis_key}.autorange'] = False
+                linear_updates[f'{axis_key}.range'] = [0, max_depth_value]
+                # Log: fixed 10^0..10^ceil(log10(max))
+                log_updates[f'{axis_key}.type'] = 'log'
+                log_updates[f'{axis_key}.autorange'] = False
+                log_updates[f'{axis_key}.range'] = [0, log_upper_ceiled]
+
+            fig.update_layout(
+                updatemenus=[
+                    dict(
+                        type='buttons',
+                        direction='right',
+                        buttons=[
+                            dict(
+                                label='Linear Y',
+                                method='relayout',
+                                args=[linear_updates],
+                            ),
+                            dict(
+                                label='Log Y',
+                                method='relayout',
+                                args=[log_updates],
+                            ),
+                        ],
+                        x=-0.05,
+                        xanchor='left',
+                        y=1.3,
+                        yanchor='top',
+                        pad=dict(t=2, r=2, b=2, l=2),
+                    )
+                ]
             )
 
         return fig
