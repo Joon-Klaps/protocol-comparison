@@ -228,7 +228,7 @@ def extract_comparison(file_path: Path) -> pd.DataFrame:
     Returns:
         DataFrame with comparison information.
     """
-    df = load_excel(file_path, "Sheet1", )
+    df = load_excel(file_path, "Sheet1")
 
     # Replace "NA" to NaN, "Yes" to True & "No" to False
     df = df.replace("NA", pd.NA)
@@ -236,7 +236,6 @@ def extract_comparison(file_path: Path) -> pd.DataFrame:
     df = df.replace("No", False)
 
     return pd.DataFrame(df)
-
 
 def extract_custom_vcf_key(filename: str) -> str:
     """

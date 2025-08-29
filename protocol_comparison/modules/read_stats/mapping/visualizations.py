@@ -264,8 +264,7 @@ class MappingVisualizations:
             height=600,
             updatemenus=updatemenus,
             showlegend=True,
-            barmode='group',
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+            barmode='group'
         )
 
         sample_order = st.session_state.get("sample_order", list(species_data['sample'].astype(str).unique()))
@@ -430,8 +429,7 @@ class MappingVisualizations:
             height=600,
             updatemenus=updatemenus,
             showlegend=True,
-            barmode='group',
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+            barmode='group'
         )
 
         sample_order = st.session_state.get("sample_order", list(species_data['sample'].astype(str).unique()))

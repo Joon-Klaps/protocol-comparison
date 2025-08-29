@@ -43,7 +43,11 @@ class PreconfiguredSelections:
             logger.warning("Required columns not found in %s", parquet_file.name)
             return
 
-        file_prefix = parquet_file.stem.replace('LVE_CAP_', '').replace('_V01', '')
+        # Normalize file prefix: remove leading "LVE_CAP_" and strip any trailing version like "_V01", "_V2a", etc.
+        file_prefix = parquet_file.stem
+        file_prefix = re.sub(r'^LVE_CAP_', '', file_prefix, flags=re.IGNORECASE)
+        # remove trailing "_V..." (case-insensitive)
+        file_prefix = re.sub(r'_[Vv].*$', '', file_prefix)
 
         # Use pandas vectorized operations instead of iterating over rows
         df = df.rename(columns={
@@ -51,7 +55,8 @@ class PreconfiguredSelections:
             'LVE_codes-to-compare': 'codes_raw',
             'Comment_additional-information': 'comment',
             # Optional column for alternative naming
-            'BNI_SeqID': 'aliases_raw'
+            'Plot_names-for-legends_with-volume': 'aliases_raw',
+            'Plot_names-for-legends_short': 'aliases_short'
         })
 
         df['codes_list'] = df['codes_raw'].apply(
@@ -64,6 +69,15 @@ class PreconfiguredSelections:
             )
         else:
             df['aliases_list'] = [[] for _ in range(len(df))]
+
+        # Parse short aliases list if available
+        if 'aliases_short' in df.columns:
+            df['aliases_short_list'] = df['aliases_short'].apply(
+                lambda x: [c.strip() for c in str(x).split(',') if c.strip() != ''] if pd.notna(x) else []
+            )
+        else:
+            df['aliases_short_list'] = [[] for _ in range(len(df))]
+
         df['source_file'] = parquet_file.name
         df['file_prefix'] = file_prefix
 
@@ -75,9 +89,14 @@ class PreconfiguredSelections:
 
         for _, row in filtered_df.iterrows():
             selection_key = row['condition']
-            # Build alias mapping if lengths are compatible (>0 and same length)
+            # Build alias mappings if lengths are compatible (>0 and same length)
             aliases_list = row.get('aliases_list', []) if isinstance(row.get('aliases_list', []), list) else []
+            aliases_short_list = row.get('aliases_short_list', []) if isinstance(row.get('aliases_short_list', []), list) else []
+
             alias_by_code = {}
+            alias_short_by_code = {}
+
+            # Process full aliases (with volume)
             if aliases_list:
                 if len(aliases_list) != len(row['codes_list']):
                     logger.warning(
@@ -87,6 +106,16 @@ class PreconfiguredSelections:
                 # Zip will truncate to min length
                 alias_by_code = {code: alias for code, alias in zip(row['codes_list'], aliases_list)}
 
+            # Process short aliases
+            if aliases_short_list:
+                if len(aliases_short_list) != len(row['codes_list']):
+                    logger.warning(
+                        "Short alias list length (%d) does not match codes list length (%d) in %s - condition '%s'",
+                        len(aliases_short_list), len(row['codes_list']), parquet_file.name, selection_key
+                    )
+                # Zip will truncate to min length
+                alias_short_by_code = {code: alias for code, alias in zip(row['codes_list'], aliases_short_list)}
+
             self.selections[file_prefix][selection_key] = {
                 'condition': row['condition'],
                 'lve_codes': row['codes_list'],
@@ -95,7 +124,9 @@ class PreconfiguredSelections:
                 'file_prefix': row['file_prefix'],
                 # Optional alias data
                 'aliases_list': aliases_list,
-                'alias_by_code': alias_by_code
+                'alias_by_code': alias_by_code,
+                'aliases_short_list': aliases_short_list,
+                'alias_short_by_code': alias_short_by_code
             }
 
     def load_preconfigured_selections(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
@@ -245,6 +276,9 @@ class SampleSelectionManager:
                 # Clear any alias mapping for custom selection
                 st.session_state.pop("sample_alias_map", None)
                 st.session_state.pop("sample_alias_order", None)
+                st.session_state.pop("alias_volume_map", None)
+                st.session_state.pop("alias_short_map", None)
+                st.session_state.pop("display_mode", None)
                 return selected_samples if selected_samples else None, None
 
             # Fallback to multiselect when no paste provided
@@ -259,6 +293,9 @@ class SampleSelectionManager:
                 # Clear any alias mapping for custom selection
                 st.session_state.pop("sample_alias_map", None)
                 st.session_state.pop("sample_alias_order", None)
+                st.session_state.pop("alias_volume_map", None)
+                st.session_state.pop("alias_short_map", None)
+                st.session_state.pop("display_mode", None)
             return selected_samples if selected_samples else None, None
 
         if selection_type == "Preconfigured selections" and self.preconfigured_selections:
@@ -269,6 +306,9 @@ class SampleSelectionManager:
         # Clear any alias mapping for all-samples mode
         st.session_state.pop("sample_alias_map", None)
         st.session_state.pop("sample_alias_order", None)
+        st.session_state.pop("alias_volume_map", None)
+        st.session_state.pop("alias_short_map", None)
+        st.session_state.pop("display_mode", None)
         return None, None
 
     def _render_preconfigured_selection(self, available_samples: List[str]) -> tuple[Optional[List[str]], Optional[Dict[str, Any]]]:
@@ -348,21 +388,45 @@ class SampleSelectionManager:
         # Persist desired plotting order and return only the samples that are actually available
         st.session_state["sample_order"] = available_requested
 
-        # Apply alias mapping if present
-        alias_map = {}
-        alias_by_code = config_info.get('alias_by_code') if isinstance(config_info, dict) else None
-        if isinstance(alias_by_code, dict) and alias_by_code:
+        # Set up display mode and alias mappings
+        alias_by_code = config_info.get('alias_by_code', {})
+        alias_short_by_code = config_info.get('alias_short_by_code', {})
+
+        # Store both types of alias mappings in session state
+        st.session_state["alias_volume_map"] = alias_by_code
+        st.session_state["alias_short_map"] = alias_short_by_code
+
+        # Determine which aliases are available
+        has_volume_aliases = bool(alias_by_code)
+        has_short_aliases = bool(alias_short_by_code)
+
+        # Set default display mode based on available aliases
+        if "display_mode" not in st.session_state:
+            if has_short_aliases:
+                st.session_state["display_mode"] = "alias_short"
+            elif has_volume_aliases:
+                st.session_state["display_mode"] = "alias_volume"
+            else:
+                st.session_state["display_mode"] = "lve_ids"
+
+        # Set up current alias mapping based on display mode
+        current_display_mode = st.session_state.get("display_mode", "lve_ids")
+
+        if current_display_mode == "alias_volume" and has_volume_aliases:
             alias_map = {code: alias_by_code.get(code, code) for code in available_requested}
+        elif current_display_mode == "alias_short" and has_short_aliases:
+            alias_map = {code: alias_short_by_code.get(code, code) for code in available_requested}
+        else:
+            alias_map = {}
+
+        if alias_map:
             st.session_state["sample_alias_map"] = alias_map
             st.session_state["sample_alias_order"] = [alias_map.get(code, code) for code in available_requested]
-            # Initialize toggle to use alias labels by default when aliases are present
-            if "use_alias_labels" not in st.session_state:
-                st.session_state["use_alias_labels"] = True
         else:
             # Clear any previous alias mapping
             st.session_state.pop("sample_alias_map", None)
             st.session_state.pop("sample_alias_order", None)
-            st.session_state["use_alias_labels"] = False
+
         return available_requested if available_requested else None, config_info
 
     def render_sidebar_info(self, selected_preconfigured_info: Optional[Dict[str, Any]]) -> None:
@@ -376,29 +440,68 @@ class SampleSelectionManager:
                 if selected_preconfigured_info['comment']:
                     st.caption(selected_preconfigured_info['comment'])
 
-                # If alias mapping is active, show a compact indicator and mapping expander
-                alias_map = st.session_state.get("sample_alias_map", {})
-                if isinstance(alias_map, dict) and alias_map:
-                    # Toggle: Use alternative sample names
-                    current = st.session_state.get("use_alias_labels", True)
-                    use_alias = st.toggle(
-                        "Use alternative names",
-                        value=current,
-                        key="use_alias_labels",
-                        help="Toggle display between alternative names and raw sample IDs",
-                        label_visibility="visible",
-                    )
-                    if use_alias:
-                        st.markdown("✅ Using alternative sample names")
-                    else:
-                        st.markdown("✅ Displaying raw sample IDs")
-                    # Display mapping in the current selection order
-                    ordered_samples = st.session_state.get("sample_order", list(alias_map.keys()))
-                    with st.expander("View ID → Alias mapping", expanded=False):
+                # If alias mapping is active, show display mode selector
+                alias_by_code = selected_preconfigured_info.get('alias_by_code', {})
+                alias_short_by_code = selected_preconfigured_info.get('alias_short_by_code', {})
+
+                has_volume_aliases = bool(alias_by_code)
+                has_short_aliases = bool(alias_short_by_code)
+
+                # Create display options based on available aliases
+                display_options = ["LVE IDs"]
+                if has_volume_aliases:
+                    display_options.append("Alias w/ Volume")
+                if has_short_aliases:
+                    display_options.append("Alias Short")
+
+                # Map display names to internal modes
+                display_mode_map = {
+                    "LVE IDs": "lve_ids",
+                    "Alias w/ Volume": "alias_volume",
+                    "Alias Short": "alias_short"
+                }
+
+                current_mode = st.session_state.get("display_mode", "lve_ids")
+                # Convert internal mode back to display name for the radio button
+                reverse_map = {v: k for k, v in display_mode_map.items()}
+                current_display_name = reverse_map.get(current_mode, "LVE IDs")
+
+                selected_display = st.radio(
+                    "Display mode:",
+                    options=display_options,
+                    index=display_options.index(current_display_name) if current_display_name in display_options else 0,
+                    help="Choose how to display sample names",
+                    horizontal=True,
+                    key="display_mode_radio"
+                )
+
+                # Update session state with the selected mode
+                st.session_state["display_mode"] = display_mode_map[selected_display]
+
+                # Update alias mappings based on new display mode
+                update_current_alias_mappings()
+
+                # Show current mode indicator
+                if selected_display == "LVE IDs":
+                    st.markdown("✅ Displaying raw LVE sample IDs")
+                elif selected_display == "Alias w/ Volume":
+                    st.markdown("✅ Using aliases with volume information")
+                elif selected_display == "Alias Short":
+                    st.markdown("✅ Using short alias names")
+
+                # Display mapping in the current selection order
+                ordered_samples = st.session_state.get("sample_order", [])
+                current_alias_map = st.session_state.get("sample_alias_map", {})
+
+                if ordered_samples:
+                    with st.expander("View current mapping", expanded=False):
                         # Build a small two-column table-like text
                         for sid in ordered_samples:
-                            alias = alias_map.get(sid, sid)
-                            st.markdown(f"`{sid}` → **{alias}**")
+                            if selected_display == "LVE IDs":
+                                display_name = sid
+                            else:
+                                display_name = current_alias_map.get(sid, sid)
+                            st.markdown(f"`{sid}` → **{display_name}**")
 
     # ---------------------------
     # Helper methods
@@ -465,35 +568,94 @@ def apply_sample_order(df: pd.DataFrame, sample_col: str = "sample_id") -> pd.Da
 # ---------------------------
 # Alias/label utilities
 # ---------------------------
+def update_current_alias_mappings():
+    """Update the current alias mappings based on the selected display mode."""
+    display_mode = st.session_state.get("display_mode", "lve_ids")
+    sample_order = get_current_sample_order()
+
+    if not sample_order:
+        return
+
+    if display_mode == "lve_ids":
+        st.session_state.pop("sample_alias_map", None)
+        st.session_state.pop("sample_alias_order", None)
+        return
+
+    # Get the appropriate base alias map
+    if display_mode == "alias_volume":
+        base_alias_map = st.session_state.get("alias_volume_map", {})
+    elif display_mode == "alias_short":
+        base_alias_map = st.session_state.get("alias_short_map", {})
+    else:
+        base_alias_map = {}
+
+    if base_alias_map:
+        # Create current alias mapping for available samples
+        current_alias_map = {code: base_alias_map.get(code, code) for code in sample_order}
+        st.session_state["sample_alias_map"] = current_alias_map
+        st.session_state["sample_alias_order"] = [current_alias_map.get(code, code) for code in sample_order]
+    else:
+        st.session_state.pop("sample_alias_map", None)
+        st.session_state.pop("sample_alias_order", None)
+
+
 def get_current_sample_alias_map() -> Dict[str, str]:
-    """Return current mapping from sample_id -> alias label from session state, if any."""
-    alias_map = st.session_state.get("sample_alias_map", {})
+    """Return current mapping from sample_id -> display label based on display mode."""
+    display_mode = st.session_state.get("display_mode", "lve_ids")
+
+    if display_mode == "lve_ids":
+        return {}
+
+    # Get the appropriate alias map based on display mode
+    if display_mode == "alias_volume":
+        alias_map = st.session_state.get("alias_volume_map", {})
+    elif display_mode == "alias_short":
+        alias_map = st.session_state.get("alias_short_map", {})
+    else:
+        alias_map = {}
+
     return dict(alias_map) if isinstance(alias_map, dict) else {}
 
 
 def label_for_sample(sample_id: str) -> str:
-    """Return display label for a sample, falling back to the sample_id."""
-    use_alias = st.session_state.get("use_alias_labels", True)
+    """Return display label for a sample based on current display mode."""
+    display_mode = st.session_state.get("display_mode", "lve_ids")
+
+    if display_mode == "lve_ids":
+        return sample_id
+
     alias_map = get_current_sample_alias_map()
-    if use_alias and alias_map:
+    if alias_map:
         return alias_map.get(sample_id, sample_id)
     return sample_id
 
 
 def get_current_label_order() -> List[str]:
-    """Return desired label order for display (aliases if present, else raw order)."""
-    use_alias = st.session_state.get("use_alias_labels", True)
-    alias_order = st.session_state.get("sample_alias_order")
-    if use_alias and isinstance(alias_order, list) and alias_order:
-        return list(alias_order)
+    """Return desired label order for display based on current display mode."""
+    display_mode = st.session_state.get("display_mode", "lve_ids")
+
+    if display_mode == "lve_ids":
+        return get_current_sample_order()
+
+    # Get the appropriate alias order based on display mode
+    sample_order = get_current_sample_order()
+    alias_map = get_current_sample_alias_map()
+
+    if alias_map and sample_order:
+        return [alias_map.get(sample, sample) for sample in sample_order]
+
     # Fall back to raw sample order
     return get_current_sample_order()
 
 
 def map_series_to_labels(series: pd.Series) -> pd.Series:
-    """Map a pandas Series of sample IDs to display labels using the alias map."""
-    use_alias = st.session_state.get("use_alias_labels", True)
+    """Map a pandas Series of sample IDs to display labels based on current display mode."""
+    display_mode = st.session_state.get("display_mode", "lve_ids")
+
+    if display_mode == "lve_ids":
+        return series
+
     alias_map = get_current_sample_alias_map()
-    if not use_alias or not alias_map:
+    if not alias_map:
         return series
     return series.map(lambda s: alias_map.get(s, s))
