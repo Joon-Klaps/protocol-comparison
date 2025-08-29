@@ -57,6 +57,7 @@ class MappingDataManager(DataManager):
                 annotation_df = pd.read_parquet(annotation_fp)
                 # Normalize sample column name
                 annotation_df = annotation_df.rename(columns={'LVE_SeqID': 'sample'})
+                annotation_df = annotation_df[annotation_df['sample'].str.contains("LVE", na=False)]
                 if annotation_df is not None:
                     data['annotation'] = annotation_df
             except (OSError, ValueError, ImportError) as e:

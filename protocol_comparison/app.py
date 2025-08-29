@@ -244,85 +244,18 @@ def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]
                     # Clear any cached data
                     if 'cached_samples' in st.session_state:
                         del st.session_state['cached_samples']
+                    if 'samples_cache_key' in st.session_state:
+                        del st.session_state['samples_cache_key']
                     if 'cached_modules' in st.session_state:
                         del st.session_state['cached_modules']
                     if 'selected_preconfigured' in st.session_state:
                         del st.session_state['selected_preconfigured']
-
-                    # Clear coverage data cache
-                    try:
-                        try:
-                            from .modules.coverage.data import clear_coverage_cache  # type: ignore
-                        except ImportError:
-                            from protocol_comparison.modules.coverage.data import clear_coverage_cache  # type: ignore
-                        clear_coverage_cache()
-                    except ImportError:
-                        pass  # Module might not be available
 
                 st.success("Data reloaded successfully!")
                 st.rerun()
         else:
             st.button("🔄 Reload Data", disabled=True, use_container_width=True)
             st.caption("Configure valid data path first")
-
-        # Analysis Controls Section
-        if data_path_valid:
-            st.markdown("---")
-            st.subheader("⚙️ Analysis Controls")
-
-            # Show available modules as checkboxes for controls
-            available_module_names = []
-            if 'available_modules' in st.session_state:
-                available_module_names = [
-                    (name, info.get('title', name)) for name, info in st.session_state['available_modules']
-                ]
-
-            if available_module_names:
-                # Coverage controls toggle
-                coverage_enabled = st.checkbox(
-                    "📊 Coverage Analysis Controls",
-                    value=st.session_state.get('show_coverage_controls', False),
-                    help="Show/hide coverage analysis parameter controls",
-                    key="show_coverage_controls"
-                )
-
-                if coverage_enabled:
-                    # Initialize the threshold in session state if not present
-                    if 'coverage_depth_threshold' not in st.session_state:
-                        st.session_state.coverage_depth_threshold = 10
-
-
-                    number_value = st.number_input(
-                        "Exact Value",
-                        min_value=1,
-                        max_value=10000,
-                        value=st.session_state.coverage_depth_threshold,
-                        step=1,
-                        help="Type exact depth threshold",
-                        key="coverage_depth_number"
-                    )
-
-                    if number_value != st.session_state.coverage_depth_threshold:
-                        st.session_state.coverage_depth_threshold = number_value
-
-                    # Display current setting
-                    st.caption(f"🎯 Current depth threshold: **{st.session_state.coverage_depth_threshold}x**")
-
-                # Add checkboxes for other modules as needed
-                # read_stats_enabled = st.checkbox(
-                #     "📈 Read Statistics Controls",
-                #     value=False,
-                #     help="Show/hide read statistics parameter controls"
-                # )
-                #
-                # consensus_enabled = st.checkbox(
-                #     "🧬 Consensus Analysis Controls",
-                #     value=False,
-                #     help="Show/hide consensus analysis parameter controls"
-                # )
-
-            else:
-                st.info("No analysis modules available")
 
         return data_path, data_path_valid, reload_requested, sample_selection_manager
 
@@ -568,9 +501,6 @@ def render_module_tab(module_name: str, module_info: Dict[str, Any], data_path: 
             st.warning(f"No samples found for {module_info['title']} analysis")
             return
 
-        # Add some spacing and styling for sub-tabs
-        st.markdown("<br>", unsafe_allow_html=True)
-
         # Create sub-tabs for this module with enhanced styling
         sub_tab1, sub_tab2 = st.tabs([
             "📊 **Summary & Plots**",
@@ -580,6 +510,8 @@ def render_module_tab(module_name: str, module_info: Dict[str, Any], data_path: 
         # Summary & Plots Tab
         with sub_tab1:
             st.markdown('<div class="sub-tab-content">', unsafe_allow_html=True)
+
+
             # Summary Statistics Section
             st.markdown("## 📊 Summary Statistics")
             try:
@@ -592,6 +524,13 @@ def render_module_tab(module_name: str, module_info: Dict[str, Any], data_path: 
                 st.error(f"Error loading summary statistics: {str(e)}")
 
             st.markdown("---")
+
+            # Module-specific controls for coverage module only
+            if module_name == 'coverage' and hasattr(tab_instance, 'render_controls'):
+                try:
+                    tab_instance.render_controls()
+                except Exception as e:
+                    st.warning(f"Error loading coverage controls: {str(e)}")
 
             # Visualizations Section
             st.markdown("## 📈 Visualizations")
@@ -683,22 +622,35 @@ def main():
     ordered_modules = discovery.get_ordered_modules()
     st.session_state['available_modules'] = ordered_modules
 
-    # Get sample information from first available module
+    # Get sample information from first available module (with caching)
     all_samples = []
 
-    try:
-        # Try to get samples from the first working module
-        for module_name, module_info in ordered_modules:
-            try:
-                tab_module = module_info['module']
-                temp_tab = tab_module.create_tab(Path(data_path))
-                all_samples = temp_tab.get_available_samples()
-                if all_samples:
-                    break
-            except Exception:
-                continue
-    except Exception as e:
-        logger.warning("Error getting sample information: %s", e)
+    # Check if we have cached sample information
+    cache_key = f"samples_{data_path}_{len(ordered_modules)}"
+    if 'cached_samples' in st.session_state and st.session_state.get('samples_cache_key') == cache_key:
+        all_samples = st.session_state['cached_samples']
+        logger.debug("Using cached sample information")
+    else:
+        # Only instantiate modules if we don't have cached data
+        try:
+            # Try to get samples from the first working module
+            for module_name, module_info in ordered_modules:
+                try:
+                    tab_module = module_info['module']
+                    temp_tab = tab_module.create_tab(Path(data_path))
+                    all_samples = temp_tab.get_available_samples()
+                    if all_samples:
+                        break
+                except Exception:
+                    continue
+
+            # Cache the sample information
+            st.session_state['cached_samples'] = all_samples
+            st.session_state['samples_cache_key'] = cache_key
+            logger.debug("Cached sample information for %d samples", len(all_samples))
+
+        except Exception as e:
+            logger.warning("Error getting sample information: %s", e)
 
     # Sample selection
     selected_samples = None

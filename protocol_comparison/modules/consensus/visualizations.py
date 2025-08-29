@@ -122,6 +122,9 @@ class ConsensusVisualizations:
             logger.warning("No alignment found for %s with samples %s", key, sample_ids)
             return None, None
 
+        if len(sample_ids) < 2:
+            return None, None  # Need at least 2 samples for pairwise comparison
+
         try:
             # Compute both global and local identity matrices
             global_identity_matrix = self.data_manager.compute_pairwise_identity_matrix(alignment_data)

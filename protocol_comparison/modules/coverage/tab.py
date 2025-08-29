@@ -76,49 +76,25 @@ class CoverageTab:
             with st.container():
                 st.markdown("### ⚙️ Analysis Controls")
 
-                # Create columns for slider and number input
-                col1, col2 = st.columns([2, 1])
-
-                with col1:
-                    # Depth threshold slider
-                    slider_value = st.slider(
-                        "Minimum Depth Threshold",
-                        min_value=1,
-                        max_value=500,
-                        value=self.current_depth_threshold,
-                        step=10,
-                        help="Minimum depth required to consider a genomic position as 'recovered'. "
-                             "Higher values are more stringent and may result in lower recovery percentages."
-                    )
-
-                with col2:
-                    # Number input box
-                    number_value = st.number_input(
-                        "Exact Value",
-                        min_value=1,
-                        max_value=500,
-                        value=self.current_depth_threshold,
-                        step=1,
-                        help="Type exact depth threshold value"
-                    )
-
-                # Use the more recently changed value
-                # Check if either control changed from current threshold
-                if slider_value != self.current_depth_threshold:
-                    depth_threshold = slider_value
-                elif number_value != self.current_depth_threshold:
-                    depth_threshold = number_value
-                else:
-                    depth_threshold = self.current_depth_threshold
+                # Number input box for depth threshold
+                number_value = st.number_input(
+                    "Minimum Depth Threshold",
+                    min_value=1,
+                    max_value=5000,
+                    value=self.current_depth_threshold,
+                    step=1,
+                    help="Minimum depth required to consider a genomic position as 'recovered'. "
+                         "Higher values are more stringent and may result in lower recovery percentages."
+                )
 
                 # Update current threshold if changed
-                if depth_threshold != self.current_depth_threshold:
-                    self.current_depth_threshold = depth_threshold
+                if number_value != self.current_depth_threshold:
+                    self.current_depth_threshold = number_value
 
                 # Display current threshold info
-                st.info(f"🎯 Current threshold: **{depth_threshold}x** coverage")
+                st.info(f"🎯 Current threshold: **{self.current_depth_threshold}x** coverage")
 
-                return depth_threshold
+                return self.current_depth_threshold
 
         except ImportError:
             # Streamlit not available, return default
@@ -130,20 +106,12 @@ class CoverageTab:
 
     def _get_current_depth_threshold(self) -> int:
         """
-        Get the current depth threshold from sidebar controls or fallback to instance default.
+        Get the current depth threshold from instance variable.
+        The threshold is managed by the module's render_controls method.
 
         Returns:
             Current depth threshold value
         """
-        try:
-            import streamlit as st
-            # Get from sidebar controls if available
-            if 'coverage_depth_threshold' in st.session_state:
-                return st.session_state['coverage_depth_threshold']
-        except ImportError:
-            pass
-
-        # Fallback to instance default
         return self.current_depth_threshold
 
     def get_summary_stats(self, sample_ids: Optional[List[str]] = None, depth_threshold: Optional[int] = None) -> Dict[str, Any]:
