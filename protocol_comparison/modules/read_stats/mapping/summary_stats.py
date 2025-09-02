@@ -178,7 +178,6 @@ class MappingSummaryStats:
 
         # Expected species per sample from category
         ann['expected_species'] = ann['category'].apply(self._expected_species_for_category)
-        logger.info(f"ann: {ann}")
         return ann
 
     def _build_contamination_matrix(self, agg: pd.DataFrame, ann: pd.DataFrame) -> pd.DataFrame:
