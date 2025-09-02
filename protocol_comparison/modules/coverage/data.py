@@ -531,8 +531,10 @@ class CoverageDataManager(DataManager):
             depth_threshold: Minimum depth threshold for including positions
 
         Returns:
-            Dictionary with DataFrames containing frequency standard deviation data for each reference.
-            Each DataFrame contains columns: 'sdA', 'sdC', 'sdG', 'sdT', 'sum' with POS column.
+            Dictionary mapping reference -> DataFrame with columns:
+              - POS, sdA, sdC, sdG, sdT, sum
+              - counts_A, counts_C, counts_G, counts_T (dicts: {sample_id: absolute count})
+              - hover_text_A, hover_text_C, hover_text_G, hover_text_T (preformatted strings for hover)
 
         Raises:
             ValueError: If required columns are missing from the data
@@ -542,9 +544,9 @@ class CoverageDataManager(DataManager):
 
         for ref in references:
             try:
-                # Step 1: Collect and prepare dataframes for this reference
-                dfs_to_concat = []
-                valid_sample_ids = []
+                # Collect per-sample frames for this reference
+                dfs_to_concat: List[pd.DataFrame] = []
+                valid_sample_ids: List[str] = []
 
                 for sample_id in sample_ids:
                     sample_data = self.get_sample_data(sample_id, ref)
@@ -552,13 +554,14 @@ class CoverageDataManager(DataManager):
                         df = sample_data[ref].copy()
 
                         # Ensure required columns exist
-                        required_cols = ['POS', 'depth', 'freqA', 'freqC', 'freqG', 'freqT']
+                        required_cols = ['POS', 'depth', 'A', 'C', 'T', 'G', 'freqA', 'freqC', 'freqG', 'freqT']
                         if not all(col in df.columns for col in required_cols):
                             raise ValueError(f"Missing required columns in data for sample {sample_id} and reference {ref}")
 
-                        df = df.set_index('POS')[['depth', 'freqA', 'freqC', 'freqG', 'freqT']]
-                        # Filter positions by depth threshold
+                        df = df.set_index('POS')[['depth', 'A', 'C', 'T', 'G', 'freqA', 'freqC', 'freqG', 'freqT']]
+                        # Apply depth filter first
                         df = df[df['depth'] >= depth_threshold]
+                        # Suffix columns with sample id for outer join later
                         df.columns = [f'{col}_{sample_id}' for col in df.columns]
                         dfs_to_concat.append(df)
                         valid_sample_ids.append(sample_id)
@@ -568,25 +571,69 @@ class CoverageDataManager(DataManager):
                     frequency_sd_data[ref] = pd.DataFrame()
                     continue
 
-                # Step 2: Combine all dataframes for the reference
+                # Combine all samples (outer join to include all positions present in any sample)
                 combined_df = pd.concat(dfs_to_concat, axis=1, join='outer')
 
-                # Step 3: Reshape the data for easy standard deviation calculation
-                # Use `stack` to move sample-specific columns into rows, creating a multi-index
-                stacked_df = combined_df.stack().reset_index()
-                stacked_df.columns = ['POS', 'variable', 'value']
+                # Helper formatters
+                def _fmt_num(x: float) -> str:
+                    if pd.isna(x):
+                        return '-'
+                    xf = float(x)
+                    return str(int(xf)) if xf.is_integer() else f"{xf:.2f}"
 
-                # Step 4: Extract the nucleotide type from the 'variable' column
-                stacked_df['nucleotide'] = stacked_df['variable'].str.extract(r'freq(.)_')
+                def _counts_for(base: str) -> pd.Series:
+                    # Build {sample: count} preserving sample order for each POS
+                    cols = [f'{base}_{sid}' for sid in valid_sample_ids if f'{base}_{sid}' in combined_df.columns]
+                    if not cols:
+                        return pd.Series([{}] * len(combined_df), index=combined_df.index)
+                    def _row_to_dict(row: pd.Series) -> Dict[str, float]:
+                        return {sid: float(row[f'{base}_{sid}'])
+                                for sid in valid_sample_ids
+                                if f'{base}_{sid}' in row.index and pd.notna(row[f'{base}_{sid}'])}
+                    return combined_df[cols].apply(_row_to_dict, axis=1)
 
-                # Step 5: Group by POS and Nucleotide, then calculate std
-                sd_df = stacked_df.groupby(['POS', 'nucleotide'])['value'].std().unstack()
+                def _counts_to_hover(d: Dict[str, float]) -> str:
+                    if not d:
+                        return ''
+                    parts = [f"{sid}: {_fmt_num(d[sid])}" for sid in valid_sample_ids if sid in d]
+                    return '{ ' + ', '.join(parts) + ' }'
 
-                # Step 6: Clean up and calculate the sum
-                sd_df.columns = [f'sd{col}' for col in sd_df.columns]
-                sd_df = sd_df.fillna(0) # Replace NaN values (from positions with only one sample) with 0
-                sd_df['sum'] = sd_df.sum(axis=1)
-                sd_df.reset_index(inplace=True)
+                # Build per-nucleotide counts dicts and hover strings (cleanly)
+                counts_A = _counts_for('A')
+                counts_C = _counts_for('C')
+                counts_G = _counts_for('G')
+                counts_T = _counts_for('T')
+                hover_A = counts_A.apply(_counts_to_hover)
+                hover_C = counts_C.apply(_counts_to_hover)
+                hover_G = counts_G.apply(_counts_to_hover)
+                hover_T = counts_T.apply(_counts_to_hover)
+
+                # Compute SDs across samples per nucleotide using column filters
+                def _std_for(prefix: str) -> pd.Series:
+                    cols = [c for c in combined_df.columns if c.startswith(prefix + '_')]
+                    if not cols:
+                        return pd.Series([0.0] * len(combined_df), index=combined_df.index)
+                    return combined_df[cols].std(axis=1, ddof=1)
+
+                sd_df = pd.DataFrame(index=combined_df.index)
+                sd_df['sdA'] = _std_for('freqA')
+                sd_df['sdC'] = _std_for('freqC')
+                sd_df['sdG'] = _std_for('freqG')
+                sd_df['sdT'] = _std_for('freqT')
+                sd_df = sd_df.fillna(0.0)
+                sd_df['sum'] = sd_df[['sdA', 'sdC', 'sdG', 'sdT']].sum(axis=1)
+                sd_df['POS'] = sd_df.index
+
+                # Attach per-nucleotide dicts and hover strings
+                sd_df['counts_A'] = counts_A.values
+                sd_df['counts_C'] = counts_C.values
+                sd_df['counts_G'] = counts_G.values
+                sd_df['counts_T'] = counts_T.values
+                sd_df['hover_text_A'] = hover_A.values
+                sd_df['hover_text_C'] = hover_C.values
+                sd_df['hover_text_G'] = hover_G.values
+                sd_df['hover_text_T'] = hover_T.values
+                sd_df.reset_index(drop=True, inplace=True)
 
                 frequency_sd_data[ref] = sd_df
                 logging.debug("Calculated frequency SD for reference %s with %d samples and %d positions",

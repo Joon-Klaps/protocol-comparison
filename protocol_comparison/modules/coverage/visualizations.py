@@ -277,8 +277,11 @@ class CoverageVisualizations:
                              missing_cols, reference)
                 continue
 
-            # Add traces for each nucleotide
+            # Add traces for each nucleotide with nucleotide-specific counts in hover
             for nucleotide, color in nucleotide_colors.items():
+                # Map sd column name (sdA, sdC, ...) to corresponding hover_text_{N}
+                nuc = nucleotide[-1]
+                hover_col = f'hover_text_{nuc}' if f'hover_text_{nuc}' in sd_df.columns else 'hover_text'
                 fig.add_trace(
                     go.Scatter(
                         x=sd_df['POS'],
@@ -286,30 +289,70 @@ class CoverageVisualizations:
                         mode='lines',
                         name=f'{nucleotide[-1]}',  # Extract nucleotide letter
                         line=dict(color=color, width=2),
+                        customdata=sd_df[[hover_col]].values,
                         hovertemplate=f'<b>{nucleotide[-1]} - {reference}</b><br>' +
-                                    'Position: %{x}<br>' +
-                                    'Frequency SD: %{y:.4f}<br>' +
-                                    '<extra></extra>',
-                        showlegend=(row_idx == 0)  # Only show legend for first reference
+                                      'Position: %{x}<br>' +
+                                      'Frequency SD: %{y:.4f}<br>' +
+                                      f'Counts ({nuc}): %{{customdata[0]}}<br>' +
+                                      '<extra></extra>',
+                        showlegend=(row_idx == 0) # Only show legend for first reference
                     ),
                     row=row_idx + 1, col=1
                 )
 
         fig.update_layout(
-            title='Individual Nucleotide Frequency Standard Deviations',
+            title=f'Individual Nucleotide Frequency Standard Deviations (required depth: {self.depth_threshold})',
             height=300 * len(references),
             showlegend=True,
             hovermode='x unified'
         )
 
-        # Update x-axis and y-axis labels for all subplots
+        # Update x-axis and y-axis labels for all subplots (default to standardized Y: 0..0.5)
         for i in range(len(references)):
             fig.update_xaxes(
                 title_text='Genomic Position',
                 range=[0, None],  # Start at 0, auto-scale max
                 row=i + 1, col=1
             )
-            fig.update_yaxes(title_text='Frequency SD', row=i + 1, col=1)
+            fig.update_yaxes(title_text='Frequency SD', range=[0, 0.5], autorange=False, row=i + 1, col=1)
+
+        # Add buttons to toggle Y-axis scaling
+        if len(references) > 0:
+            auto_updates = {}
+            std_updates = {}
+            for idx in range(1, len(references) + 1):
+                axis_key = 'yaxis' if idx == 1 else f'yaxis{idx}'
+                auto_updates[f'{axis_key}.autorange'] = True
+                auto_updates[f'{axis_key}.range'] = None
+                std_updates[f'{axis_key}.autorange'] = False
+                std_updates[f'{axis_key}.range'] = [0, 0.5]
+
+            fig.update_layout(
+                updatemenus=[
+                    dict(
+                        type="buttons",
+                        direction="right",
+                        active=1,  # Default to Standardize Y
+                        buttons=[
+                            dict(
+                                label="Auto Y",
+                                method="relayout",
+                                args=[auto_updates]
+                            ),
+                            dict(
+                                label="Standardize Y",
+                                method="relayout",
+                                args=[std_updates]
+                            ),
+                        ],
+                        x=-0.05,
+                        xanchor="left",
+                        y=1.3,
+                        yanchor="top",
+                        pad=dict(t=2, r=2, b=2, l=2)
+                    )
+                ]
+            )
 
         return fig
 

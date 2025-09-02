@@ -336,7 +336,7 @@ class MappingVisualizations:
             fig.add_trace(go.Bar(
                 x=segment_data['sample'].astype(str),
                 y=segment_data['umi_mapping_reads'],
-                name=f'UMI Reads - {segment}',
+                name=f'Deduplicated # Reads - {segment}',
                 visible=True,
                 legendgroup=f'umi_reads_{segment}',
                 marker_color=umi_reads_colors[segment],
@@ -392,13 +392,13 @@ class MappingVisualizations:
                 yanchor="top",
                 pad=dict(l=0, r=0, t=0, b=0),
                 buttons=[
-                    dict(label="UMI Reads (Log)", method="update", args=[
+                    dict(label="Deduplicated # Reads (Log)", method="update", args=[
                         {"visible": visibility_patterns['umi_reads']},
-                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (UMI Reads, Log)'}
+                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (Deduplicated # Reads, Log)'}
                     ]),
-                    dict(label="UMI Reads (Linear)", method="update", args=[
+                    dict(label="Deduplicated # Reads (Linear)", method="update", args=[
                         {"visible": visibility_patterns['umi_reads']},
-                        {'yaxis.title': "Number of Reads", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (UMI Reads, Linear)'}
+                        {'yaxis.title': "Number of Reads", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'UMI Statistics - {species} (Deduplicated # Reads, Linear)'}
                     ]),
                     dict(label="Total UMIs (Log)", method="update", args=[
                         {"visible": visibility_patterns['total_umis']},
@@ -425,7 +425,7 @@ class MappingVisualizations:
         ]
 
         fig.update_layout(
-            title={'text': f'UMI Statistics - {species} (UMI Reads, Log)', 'y': 0.97, 'yanchor': 'top'},
+            title={'text': f'UMI Statistics - {species} (Deduplicated # Reads, Log)', 'y': 0.97, 'yanchor': 'top'},
             xaxis_title='',
             yaxis=dict(title='Number of Reads (log scale)', type='log'),
             xaxis_tickangle=-45,
