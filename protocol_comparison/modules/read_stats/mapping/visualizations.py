@@ -225,7 +225,7 @@ class MappingVisualizations:
                 showactive=True,
                 x=-0.05,
                 xanchor="left",
-                y=1.3,
+                y=1.5,
                 yanchor="top",
                 buttons=[
                     dict(label="Raw Mapped (Log)", method="update", args=[
@@ -386,7 +386,7 @@ class MappingVisualizations:
                 showactive=True,
                 x=-0.05,
                 xanchor="left",
-                y=1.3,
+                y=1.5,
                 yanchor="top",
                 buttons=[
                     dict(label="UMI Reads (Log)", method="update", args=[

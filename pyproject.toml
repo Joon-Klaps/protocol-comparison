@@ -39,7 +39,7 @@ dependencies = [
     "tqdm>=4.64.0",
     "pyarrow>=10.0.0",
     "dash-bio>=1.0.0",
-    "AlignmentViewer @ git+https://github.com/Joon-Klaps/AlignmentViewer.git@plotly",
+    "AlignmentViewer @ git+https://github.com/Joon-Klaps/AlignmentViewer.git",
     "pyfamsa>=0.6.0"
 ]
 
