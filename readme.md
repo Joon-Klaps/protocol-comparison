@@ -7,7 +7,7 @@ A modular Streamlit dashboard for comparing viral genomics analysis protocols.
 Install the package in development mode:
 
 ```bash
-pip install -e .
+pip install git+https://github.com/Joon-Klaps/protocol-comparison
 ```
 
 ## Usage

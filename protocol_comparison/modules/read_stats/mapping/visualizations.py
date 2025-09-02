@@ -223,10 +223,11 @@ class MappingVisualizations:
                 type="buttons",
                 direction="right",
                 showactive=True,
-                x=-0.05,
+                x=0.0,
                 xanchor="left",
-                y=1.5,
+                y=1.08,
                 yanchor="top",
+                pad=dict(l=0, r=0, t=0, b=0),
                 buttons=[
                     dict(label="Cleaned Mapped (Log)", method="update", args=[
                         {"visible": visibility_patterns['raw_mapped']},
@@ -257,14 +258,15 @@ class MappingVisualizations:
         ]
 
         fig.update_layout(
-            title=f'Mapping Statistics - {species} (Cleaned Mapped, Log)',
+            title={'text': f'Mapping Statistics - {species} (Raw Mapped, Log)', 'y': 0.97, 'yanchor': 'top'},
             xaxis_title='',
             yaxis=dict(title='Number of Reads (log scale)', type='log'),
             xaxis_tickangle=-45,
             height=600,
             updatemenus=updatemenus,
             showlegend=True,
-            barmode='group'
+            barmode='group',
+            margin=dict(t=110, r=20, b=60, l=60)
         )
 
         sample_order = st.session_state.get("sample_order", list(species_data['sample'].astype(str).unique()))
@@ -384,10 +386,11 @@ class MappingVisualizations:
                 type="buttons",
                 direction="right",
                 showactive=True,
-                x=-0.05,
+                x=0.0,
                 xanchor="left",
-                y=1.5,
+                y=1.08,
                 yanchor="top",
+                pad=dict(l=0, r=0, t=0, b=0),
                 buttons=[
                     dict(label="UMI Reads (Log)", method="update", args=[
                         {"visible": visibility_patterns['umi_reads']},
@@ -422,14 +425,15 @@ class MappingVisualizations:
         ]
 
         fig.update_layout(
-            title=f'UMI Statistics - {species} (UMI Reads, Log)',
+            title={'text': f'UMI Statistics - {species} (UMI Reads, Log)', 'y': 0.97, 'yanchor': 'top'},
             xaxis_title='',
             yaxis=dict(title='Number of Reads (log scale)', type='log'),
             xaxis_tickangle=-45,
             height=600,
             updatemenus=updatemenus,
             showlegend=True,
-            barmode='group'
+            barmode='group',
+            margin=dict(t=110, r=20, b=60, l=60)
         )
 
         sample_order = st.session_state.get("sample_order", list(species_data['sample'].astype(str).unique()))

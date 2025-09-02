@@ -38,8 +38,15 @@ dependencies = [
     "streamlit-option-menu>=0.3.6",
     "tqdm>=4.64.0",
     "pyarrow>=10.0.0",
+<<<<<<< HEAD
     "dash-bio>=1.0.0",
     "AlignmentViewer @ git+https://github.com/Joon-Klaps/AlignmentViewer.git",
+||||||| 8235e65
+    "dash-bio>=1.0.0",
+    "AlignmentViewer @ git+https://github.com/Joon-Klaps/AlignmentViewer.git@plotly",
+=======
+    "AlignmentViewer @ git+https://github.com/Joon-Klaps/AlignmentViewer.git",
+>>>>>>> 579fc5f45981b42f36688d5e634f74851d014533
     "pyfamsa>=0.6.0"
 ]
 
