@@ -414,6 +414,8 @@ class CoverageVisualizations:
                     dict(
                         type="buttons",
                         direction="right",
+                        # Default to 'Auto Y' (index 0) since autorange is the initial state
+                        active=0,
                         buttons=[
                             dict(
                                 label="Auto Y",
@@ -600,6 +602,8 @@ class CoverageVisualizations:
                     dict(
                         type='buttons',
                         direction='right',
+                        # Default to 'Log Y' (index 1) because axes are initialized as log
+                        active=1,
                         buttons=[
                             dict(
                                 label='Linear Y',

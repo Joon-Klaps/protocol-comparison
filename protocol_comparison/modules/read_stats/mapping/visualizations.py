@@ -228,21 +228,21 @@ class MappingVisualizations:
                 y=1.5,
                 yanchor="top",
                 buttons=[
-                    dict(label="Raw Mapped (Log)", method="update", args=[
+                    dict(label="Cleaned Mapped (Log)", method="update", args=[
                         {"visible": visibility_patterns['raw_mapped']},
-                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Raw Mapped, Log)'}
+                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Cleaned Mapped, Log)'}
                     ]),
-                    dict(label="Raw Mapped (Linear)", method="update", args=[
+                    dict(label="Cleaned Mapped (Linear)", method="update", args=[
                         {"visible": visibility_patterns['raw_mapped']},
-                        {'yaxis.title': "Number of Reads", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Raw Mapped, Linear)'}
+                        {'yaxis.title': "Number of Reads", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Cleaned Mapped, Linear)'}
                     ]),
-                    dict(label="Raw Unmapped (Log)", method="update", args=[
+                    dict(label="Cleaned Unmapped (Log)", method="update", args=[
                         {"visible": visibility_patterns['raw_unmapped']},
-                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Raw Unmapped, Log)'}
+                        {'yaxis.title': "Number of Reads (log scale)", 'yaxis.type': "log", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Cleaned Unmapped, Log)'}
                     ]),
-                    dict(label="Raw Unmapped (Linear)", method="update", args=[
+                    dict(label="Cleaned Unmapped (Linear)", method="update", args=[
                         {"visible": visibility_patterns['raw_unmapped']},
-                        {'yaxis.title': "Number of Reads", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Raw Unmapped, Linear)'}
+                        {'yaxis.title': "Number of Reads", 'yaxis.type': "linear", 'yaxis.autorange': True, 'yaxis.range': None, 'title.text': f'Mapping Statistics - {species} (Cleaned Unmapped, Linear)'}
                     ]),
                     dict(label="% Mapped", method="update", args=[
                         {"visible": visibility_patterns['pct_mapped']},
@@ -257,7 +257,7 @@ class MappingVisualizations:
         ]
 
         fig.update_layout(
-            title=f'Mapping Statistics - {species} (Raw Mapped, Log)',
+            title=f'Mapping Statistics - {species} (Cleaned Mapped, Log)',
             xaxis_title='',
             yaxis=dict(title='Number of Reads (log scale)', type='log'),
             xaxis_tickangle=-45,

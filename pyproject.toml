@@ -11,7 +11,7 @@ authors = [
 description = "CLI and Streamlit dashboard for viral genomics protocol comparison"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.8"
+requires-python = ">=3.9,<3.9.7 || >3.9.7"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",

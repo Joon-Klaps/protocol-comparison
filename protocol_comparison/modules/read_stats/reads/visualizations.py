@@ -89,11 +89,15 @@ class ReadProcessingVisualizations:
             ))
 
         # Add buttons for log/linear y-axis and update title
+        # Ensure initial axis is log scale by default
+        fig.update_yaxes(type='log')
         updatemenus = [
             dict(
                 type="buttons",
                 direction="right",
                 showactive=True,
+                # Select the first button (Log Scale) by default to match initial axis
+                active=0,
                 x=-0.05,
                 xanchor="left",
                 y=1.5,
