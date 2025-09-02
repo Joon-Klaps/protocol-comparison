@@ -236,7 +236,7 @@ def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]
 
         reload_requested = False
         if data_path_valid:
-            if st.button("🔄 Reload Data", type="primary", use_container_width=True):
+            if st.button("🔄 Reload Data", type="primary", width=True=True):
                 reload_requested = True
                 # Show loading animation
                 with st.spinner("Loading data..."):
@@ -254,7 +254,7 @@ def render_sidebar() -> tuple[str, bool, bool, Optional[SampleSelectionManager]]
                 st.success("Data reloaded successfully!")
                 st.rerun()
         else:
-            st.button("🔄 Reload Data", disabled=True, use_container_width=True)
+            st.button("🔄 Reload Data", disabled=True, width=True=True)
             st.caption("Configure valid data path first")
 
         return data_path, data_path_valid, reload_requested, sample_selection_manager
@@ -360,10 +360,10 @@ def render_visualizations(viz_data: Dict[str, Any]):
                     components.html(figure, height=400, scrolling=True)
                 elif fig_type == 'plotly':
                     # Render Plotly chart
-                    st.plotly_chart(figure, use_container_width=True)
+                    st.plotly_chart(figure, width=True=True)
                 else:
                     # Try plotly as fallback
-                    st.plotly_chart(figure, use_container_width=True)
+                    st.plotly_chart(figure, width=True=True)
             except Exception as e:
                 st.error(f"Error displaying visualization ({fig_type}): {str(e)}")
                 # Show debug info
@@ -435,7 +435,7 @@ def render_raw_data(data_dict: Dict[str, Any]):
                     if df is not None:
                         preview_rows = min(50, len(df))
                         st.caption(f"Showing first {preview_rows} of {len(df)} rows")
-                        st.dataframe(df.head(preview_rows), use_container_width=True)
+                        st.dataframe(df.head(preview_rows), width=True=True)
                         # Add CSV download button for full dataframe
                         try:
                             csv_bytes = df.to_csv(index=False).encode('utf-8')
@@ -450,7 +450,7 @@ def render_raw_data(data_dict: Dict[str, Any]):
                         except Exception as ex:
                             st.warning(f"Could not prepare CSV download: {ex}")
                     else:
-                        st.dataframe(data, use_container_width=True)
+                        st.dataframe(data, width=True=True)
                 else:
                     st.info("No data available")
             elif data_type == 'fasta':
