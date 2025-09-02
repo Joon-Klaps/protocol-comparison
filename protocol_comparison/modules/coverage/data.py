@@ -519,7 +519,7 @@ class CoverageDataManager(DataManager):
 
         return samples
 
-    def get_frequency_sd_data(self, sample_ids: List[str]) -> Dict[str, pd.DataFrame]:
+    def get_frequency_sd_data(self, sample_ids: List[str], depth_threshold: int = 10) -> Dict[str, pd.DataFrame]:
         """
         Calculate frequency standard deviation data for specified samples.
 
@@ -528,6 +528,7 @@ class CoverageDataManager(DataManager):
 
         Args:
             sample_ids: List of sample identifiers to get frequency shift data for
+            depth_threshold: Minimum depth threshold for including positions
 
         Returns:
             Dictionary with DataFrames containing frequency standard deviation data for each reference.
@@ -551,11 +552,13 @@ class CoverageDataManager(DataManager):
                         df = sample_data[ref].copy()
 
                         # Ensure required columns exist
-                        required_cols = ['POS', 'freqA', 'freqC', 'freqG', 'freqT']
+                        required_cols = ['POS', 'depth', 'freqA', 'freqC', 'freqG', 'freqT']
                         if not all(col in df.columns for col in required_cols):
                             raise ValueError(f"Missing required columns in data for sample {sample_id} and reference {ref}")
 
-                        df = df.set_index('POS')[['freqA', 'freqC', 'freqG', 'freqT']]
+                        df = df.set_index('POS')[['depth', 'freqA', 'freqC', 'freqG', 'freqT']]
+                        # Filter positions by depth threshold
+                        df = df[df['depth'] >= depth_threshold]
                         df.columns = [f'{col}_{sample_id}' for col in df.columns]
                         dfs_to_concat.append(df)
                         valid_sample_ids.append(sample_id)

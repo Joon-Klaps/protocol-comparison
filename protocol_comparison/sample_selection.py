@@ -45,7 +45,7 @@ class PreconfiguredSelections:
 
         # Normalize file prefix: remove leading "LVE_CAP_" and strip any trailing version like "_V01", "_V2a", etc.
         file_prefix = parquet_file.stem
-        file_prefix = re.sub(r'^LVE_CAP_', '', file_prefix, flags=re.IGNORECASE)
+        file_prefix = re.sub(r'^.*LVE_CAP_', '', file_prefix, flags=re.IGNORECASE)
         # remove trailing "_V..." (case-insensitive)
         file_prefix = re.sub(r'_[Vv].*$', '', file_prefix)
 

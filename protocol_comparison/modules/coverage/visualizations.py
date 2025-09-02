@@ -229,7 +229,7 @@ class CoverageVisualizations:
             return fig
 
         # Get frequency shift data
-        freq_shift_data = self.data_manager.get_frequency_sd_data(sample_ids)
+        freq_shift_data = self.data_manager.get_frequency_sd_data(sample_ids, depth_threshold=self.depth_threshold)
 
         if not freq_shift_data:
             fig = go.Figure()
